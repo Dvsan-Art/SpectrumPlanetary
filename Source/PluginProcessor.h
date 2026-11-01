@@ -31,12 +31,11 @@ public:
     void getStateInformation (juce::MemoryBlock&) override {}
     void setStateInformation (const void*, int) override {}
 
-    // Lo llama la interfaz 30 veces por segundo
     juce::var buildFrame();
     void requestReset() { resetRequested = true; }
 
-    std::atomic<int> fftIdx { 2 };   // 0=Coarse 1=Medium 2=Fine
-    std::atomic<int> winIdx { 0 };   // 0=Hanning 1=Blackman 2=Hamming 3=Rect
+    std::atomic<int> fftIdx { 2 };
+    std::atomic<int> winIdx { 0 };
 
 private:
     static constexpr int ringSize = 32768;
