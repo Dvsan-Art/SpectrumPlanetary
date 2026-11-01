@@ -1,24 +1,32 @@
-name: Compilar VST3
+name: Build VST3
+
 on:
   push:
-  workflow_dispatch:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
 jobs:
-  windows:
-    runs-on: windows-2022
+  build-windows:
+    name: Build for Windows (VST3)
+    runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: Descargar WebView2
-        shell: pwsh
-        run: nuget install Microsoft.Web.WebView2 -Version 1.0.1901.177 -OutputDirectory "$env:RUNNER_TEMP\wv2"
-      - name: Configurar
-        shell: pwsh
-        run: |
-          $p = (Get-ChildItem "$env:RUNNER_TEMP\wv2" -Directory | Select-Object -First 1).FullName
-          Write-Host "WebView2 en: $p"
-          cmake -B build -G "Visual Studio 17 2022" -A x64 "-DJUCE_WEBVIEW2_PACKAGE_LOCATION=$env:RUNNER_TEMP\wv2" "-DWebView2_include_dir=$p\build\native\include" "-DWebView2_library=$p\build\native\x64\WebView2LoaderStatic.lib"
-      - name: Compilar
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure CMake
+        run: cmake -B build -G "Visual Studio 17 2022" -A x64
+
+      - name: Build project
         run: cmake --build build --config Release
-      - uses: actions/upload-artifact@v4
+
+      - name: Prepare Artifact
+        run: |
+          mkdir staging
+          Copy-Item -Path "build\SpectrumPlanetary_artefacts\Release\VST3\Spectrum Planetary.vst3" -Destination "staging\" -Recurse
+
+      - name: Upload VST3 Artifact
+        uses: actions/upload-artifact@v4
         with:
           name: Spectrum-Planetary-VST3
-          path: build/SpectrumPlanetary_artefacts/Release/VST3/
+          path: staging/
