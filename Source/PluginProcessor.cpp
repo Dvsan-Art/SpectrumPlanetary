@@ -169,7 +169,6 @@ void SpectrumProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     }
     writePos.store (w, std::memory_order_release);
 
-    // True Peak (sobremuestreo x4 aproximado)
     float tp[2] = { pL, pR };
     for (int c = 0; c < 2; ++c)
     {
@@ -234,7 +233,6 @@ juce::var SpectrumProcessor::buildFrame()
     for (int k = 0; k < half; ++k)
         dbArr[(size_t) k] = (float) (20.0 * std::log10 (k0 * (double) fftData[(size_t) k] + 1.0e-9));
 
-    // 600 puntos repartidos en escala logaritmica 20 Hz - 20 kHz
     const int NP = 600;
     const double nyq = sr * 0.5;
     juce::Array<juce::var> spec;
@@ -259,7 +257,6 @@ juce::var SpectrumProcessor::buildFrame()
         spec.add (std::round (m * 10.0) / 10.0);
     }
 
-    // Vectorscopio (512 pares L/R) y correlacion
     juce::Array<juce::var> vec;
     for (int i = 0; i < 512; ++i)
     {
