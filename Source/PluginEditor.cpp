@@ -32,8 +32,8 @@ SpectrumEditor::SpectrumEditor (SpectrumProcessor& p) : AudioProcessorEditor (&p
     web->goToURL (juce::WebBrowserComponent::getResourceProviderRoot());
 
     setResizable (true, true);
-    setResizeLimits (900, 600, 2400, 1500);
-    setSize (700, 450);
+    setResizeLimits (700, 440, 2000, 1300);
+    setSize (950, 600); // Tamaño compacto y optimizado
     startTimerHz (30);
 }
 
