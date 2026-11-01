@@ -33,7 +33,7 @@ SpectrumEditor::SpectrumEditor (SpectrumProcessor& p) : AudioProcessorEditor (&p
 
     setResizable (true, true);
     setResizeLimits (900, 600, 2400, 1500);
-    setSize (1180, 740);
+    setSize (700, 450);
     startTimerHz (30);
 }
 
