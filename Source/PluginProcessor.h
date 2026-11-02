@@ -3,6 +3,7 @@
 #include <array>
 #include <atomic>
 #include <vector>
+#include "FilterBank.h"
 
 class SpectrumProcessor : public juce::AudioProcessor
 {
@@ -43,6 +44,7 @@ public:
                            pkL { -100.f }, pkR { -100.f }, pkMax { -100.f }, rmsL { -100.f }, rmsR { -100.f };
     };
     Meters meters;
+    FilterBankAnalyzer analyzer;
     juce::AudioProcessorValueTreeState apvts;
 
 private:
@@ -53,6 +55,12 @@ private:
     std::atomic<float>* inParam = nullptr;
     std::atomic<float>* outParam = nullptr;
     std::atomic<float>* runParam = nullptr;
+    struct ParamPtrs
+    {
+        std::atomic<float> *bands = nullptr, *res = nullptr, *win = nullptr, *channel = nullptr, *integ = nullptr, *decay = nullptr,
+                           *holdTime = nullptr, *holdDecay = nullptr, *avgTime = nullptr, *avgSlope = nullptr, *gain = nullptr,
+                           *peakOn = nullptr, *holdInf = nullptr;
+    } pp;
     std::vector<float> scratchL, scratchR;
 
     struct Biquad
