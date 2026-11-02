@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(SpectrumPlanetary VERSION 1.0.0)
+project(SpectrumPlanetary VERSION 1.1.0)
 
 include(FetchContent)
 FetchContent_Declare(JUCE
@@ -24,13 +24,14 @@ target_sources(SpectrumPlanetary PRIVATE
     Source/PluginEditor.cpp)
 
 target_compile_definitions(SpectrumPlanetary PUBLIC
+    JUCE_WEB_BROWSER=0
+    JUCE_USE_CURL=0
     JUCE_VST3_CAN_REPLACE_VST2=0)
 
 target_link_libraries(SpectrumPlanetary
     PRIVATE
         juce::juce_audio_utils
         juce::juce_dsp
-        juce::juce_gui_extra
     PUBLIC
         juce::juce_recommended_config_flags
         juce::juce_recommended_lto_flags)
