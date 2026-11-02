@@ -1,6 +1,6 @@
 #pragma once
 #include "PluginProcessor.h"
-#include "SpectrumEngine.h"
+#include "FilterBank.h"
 #include "UiComponents.h"
 
 class SpectrumEditor : public juce::AudioProcessorEditor, private juce::Timer
@@ -16,7 +16,6 @@ private:
 
     SpectrumProcessor& proc;
     ui::PlanetLnF lnf;
-    SpectrumEngine engine;
     ui::Content content;
     ui::SpectrumView spectrum;
     ui::MeterPanel meters;
