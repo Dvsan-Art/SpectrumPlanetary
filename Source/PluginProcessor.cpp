@@ -14,16 +14,17 @@ static juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
 
     flt ("inGain", "Input Trim", -24.f, 12.f, 0.1f, 0.f);
     flt ("outGain", "Output", -24.f, 12.f, 0.1f, 0.f);
-    cho ("res", "Resolution", { "Coarse", "Medium", "Fine" }, 2);
-    cho ("win", "Window", { "Hanning", "Blackman", "Hamming", "Rect" }, 0);
+    cho ("res", "Resolution", { "Soft", "Normal", "Sharp" }, 1);
+    cho ("win", "Detector", { "RMS", "Peak" }, 0);
     bol ("run", "Analyze", true);
     cho ("root", "Root Note", { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" }, 0);
     l.add (std::make_unique<juce::AudioParameterInt> (ID { "oct", 1 }, "Octave", 1, 7, 4));
     cho ("width", "Width", { "0.5", "1", "2", "3", "6", "12", "24" }, 1);
     flt ("gain", "Display Gain", -30.f, 30.f, 0.5f, 0.f);
-    cho ("bands", "Bands per Octave", { "1", "2", "3", "4", "6", "12" }, 3);
+    cho ("bands", "Bands per Octave", { "3", "4", "6", "12" }, 1);
     flt ("peakDecay", "Peak Decay", 1.f, 60.f, 0.1f, 12.f);
-    flt ("smooth", "Smooth", 0.f, 0.95f, 0.01f, 0.55f);
+    l.add (std::make_unique<juce::AudioParameterFloat> (ID { "integ", 1 }, "Integration", juce::NormalisableRange<float> (5.f, 1000.f, 1.f, 0.4f), 120.f));
+    cho ("style", "Display", { "Bars", "Curve", "Fill" }, 0);
     cho ("channel", "Channel", { "Both", "Left", "Right", "Mid", "Side" }, 0);
     cho ("grid", "Freq. Grid", { "Octave", "Decade", "None" }, 0);
     flt ("ceiling", "Ceiling", -12.f, 24.f, 1.f, 3.f);
@@ -49,6 +50,11 @@ SpectrumProcessor::SpectrumProcessor()
     inParam  = apvts.getRawParameterValue ("inGain");
     outParam = apvts.getRawParameterValue ("outGain");
     runParam = apvts.getRawParameterValue ("run");
+    pp.bands = apvts.getRawParameterValue ("bands"); pp.res = apvts.getRawParameterValue ("res"); pp.win = apvts.getRawParameterValue ("win");
+    pp.channel = apvts.getRawParameterValue ("channel"); pp.integ = apvts.getRawParameterValue ("integ"); pp.decay = apvts.getRawParameterValue ("peakDecay");
+    pp.holdTime = apvts.getRawParameterValue ("holdTime"); pp.holdDecay = apvts.getRawParameterValue ("holdDecay");
+    pp.avgTime = apvts.getRawParameterValue ("avgTime"); pp.avgSlope = apvts.getRawParameterValue ("avgSlope"); pp.gain = apvts.getRawParameterValue ("gain");
+    pp.peakOn = apvts.getRawParameterValue ("peakOn"); pp.holdInf = apvts.getRawParameterValue ("holdInf");
     resetState();
 }
 
@@ -62,6 +68,7 @@ void SpectrumProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
     sr = sampleRate;
     subLen = (int) (sr * 0.1);
+    analyzer.prepare (sampleRate, juce::jmax (samplesPerBlock, 4096));
     scratchL.assign ((size_t) juce::jmax (samplesPerBlock, 4096), 0.f);
     scratchR.assign ((size_t) juce::jmax (samplesPerBlock, 4096), 0.f);
     setupFilters();
@@ -108,6 +115,7 @@ void SpectrumProcessor::setupFilters()
 
 void SpectrumProcessor::resetState()
 {
+    analyzer.reset();
     for (int c = 0; c < 2; ++c) { shelf[c].clear(); hp[c].clear(); }
     eL = eR = 0.0; en = 0; si = 0; filled = 0; subCount = 0;
     subE.fill (0.0); subEL.fill (0.0); subER.fill (0.0);
@@ -210,6 +218,16 @@ void SpectrumProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
         const float* R = buffer.getReadPointer (buffer.getNumChannels() > 1 ? 1 : 0);
         for (int i = 0; i < n; ++i) { scratchL[(size_t) i] = L[i] * gIn; scratchR[(size_t) i] = R[i] * gIn; }
         analyseChunk (scratchL.data(), scratchR.data(), n);
+
+        static const int bandList[4] = { 3, 4, 6, 12 };
+        FilterBankAnalyzer::Params q;
+        q.bands = bandList[juce::jlimit (0, 3, (int) pp.bands->load())];
+        q.order = 2 + juce::jlimit (0, 2, (int) pp.res->load());
+        q.detector = (int) pp.win->load(); q.channel = (int) pp.channel->load();
+        q.integMs = pp.integ->load(); q.decay = pp.decay->load(); q.holdTime = pp.holdTime->load(); q.holdDecay = pp.holdDecay->load();
+        q.avgTime = pp.avgTime->load(); q.avgSlope = pp.avgSlope->load(); q.gain = pp.gain->load();
+        q.peakOn = pp.peakOn->load() > 0.5f; q.holdInf = pp.holdInf->load() > 0.5f;
+        analyzer.process (scratchL.data(), scratchR.data(), n, q);
     }
     buffer.applyGain (juce::Decibels::decibelsToGain (outParam->load()));
 }
