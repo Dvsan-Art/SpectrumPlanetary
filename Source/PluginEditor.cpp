@@ -1,103 +1,105 @@
 #include "PluginEditor.h"
 
-SpectrumEditor::SpectrumEditor (SpectrumProcessor& p) : AudioProcessorEditor (&p), proc (p)
+using namespace ui;
+
+SpectrumEditor::SpectrumEditor (SpectrumProcessor& p)
+    : AudioProcessorEditor (&p), proc (p),
+      spectrum (p.apvts, engine), meters (p), phase (p), keyboard (p.apvts), settings (p.apvts)
 {
-    setSize (950, 600);
+    auto& A = proc.apvts;
+    engine.reset();
+    content.setBounds (0, 0, 760, 470);
+    content.setLookAndFeel (&lnf);
+    addAndMakeVisible (content);
 
-    analyzeButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff262a32));
-    analyzeButton.setColour(juce::TextButton::textColourOnId, juce::Colour(0xffff9a2e));
-    analyzeButton.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
-    addAndMakeVisible(analyzeButton);
+    auto place = [this] (juce::Component& c, int x, int y, int w, int h) { content.addAndMakeVisible (c); c.setBounds (x, y, w, h); };
+    auto dbText = [] (double v) { return juce::String ((int) std::lround (v)) + "dB"; };
 
-    inputKnob.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
-    inputKnob.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
-    addAndMakeVisible(inputKnob);
+    // cabecera
+    knIn  = std::make_unique<KnobBox> (A, "inGain", "", dbText);   place (*knIn, 224, 6, 34, 52);
+    knOut = std::make_unique<KnobBox> (A, "outGain", "", dbText);  place (*knOut, 262, 6, 34, 52);
+    bRes = std::make_unique<CycleButton> (*A.getParameter ("res"), 0, 2);   place (*bRes, 302, 30, 58, 22);
+    bWin = std::make_unique<CycleButton> (*A.getParameter ("win"), 0, 3);   place (*bWin, 364, 30, 60, 22);
+    bRun1.setButtonText ("Analyze"); bRun1.setClickingTogglesState (true);
+    runAtt1 = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (A, "run", bRun1);
+    place (bRun1, 430, 30, 58, 22);
+    bSet.setButtonText ("SET");
+    bSet.onClick = [this] { settings.setVisible (! settings.isVisible()); settings.toFront (false); };
+    place (bSet, 494, 30, 58, 22);
 
-    outputKnob.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
-    outputKnob.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
-    addAndMakeVisible(outputKnob);
+    // panel lateral
+    bUp.setButtonText ("+"); bDn.setButtonText ("-");
+    bUp.onClick = [this] { pickMidi (currentMidi (proc.apvts) + 1); };
+    bDn.onClick = [this] { pickMidi (currentMidi (proc.apvts) - 1); };
+    place (bUp, 436, 88, 56, 22); place (bDn, 498, 88, 56, 22);
+    bWidth = std::make_unique<CycleButton> (*A.getParameter ("width"), 0, 6, "WIDTH: " + pmStr());
+    place (*bWidth, 436, 128, 118, 22);
+    bRoot = std::make_unique<CycleButton> (*A.getParameter ("root"), 0, 11);  place (*bRoot, 436, 168, 118, 22);
+    bOct  = std::make_unique<CycleButton> (*A.getParameter ("oct"), 1, 7);    place (*bOct, 436, 208, 118, 22);
+    knGain   = std::make_unique<KnobBox> (A, "gain", "Gain", dbText);
+    knBands  = std::make_unique<KnobBox> (A, "bands", "Bands", [] (double v) { return juce::String (kBands[juce::jlimit (0, 5, (int) std::lround (v))]) + "/oct"; });
+    knDecay  = std::make_unique<KnobBox> (A, "peakDecay", "Decay", [] (double v) { return juce::String (v, 0) + "dB/s"; });
+    knSmooth = std::make_unique<KnobBox> (A, "smooth", "Smooth", [] (double v) { return juce::String ((int) std::lround (v * 100.0)) + "%"; });
+    place (*knGain, 433, 236, 62, 62); place (*knBands, 495, 236, 62, 62);
+    place (*knDecay, 433, 300, 62, 62); place (*knSmooth, 495, 300, 62, 62);
+    bRun2.setButtonText ("Analyze"); bRun2.setClickingTogglesState (true);
+    runAtt2 = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (A, "run", bRun2);
+    place (bRun2, 436, 364, 118, 20);
 
+    // vistas
+    place (spectrum, 10, 68, 410, 316);
+    spectrum.onPick = [this] (int m) { pickMidi (m); };
+    place (meters, 566, 64, 188, 236);
+    place (phase, 566, 304, 188, 158);
+    place (keyboard, 12, 400, 542, 58);
+    keyboard.onPick = [this] (int m) { pickMidi (m); };
+    place (settings, 6, 64, 554, 324);
+    settings.setVisible (false);
+    content.onReset = [this] { proc.requestReset(); engine.reset(); };
+
+    setSize (760, 470);
+    setResizable (true, true);
+    setResizeLimits (570, 352, 1520, 940);
+    getConstrainer()->setFixedAspectRatio (760.0 / 470.0);
+    lastMs = juce::Time::getMillisecondCounterHiRes();
     startTimerHz (30);
 }
 
-SpectrumEditor::~SpectrumEditor() { stopTimer(); }
-
-void SpectrumEditor::timerCallback()
+SpectrumEditor::~SpectrumEditor()
 {
-    repaint(); // Refresca el espectro y medidores en tiempo real
-}
-
-void SpectrumEditor::paint (juce::Graphics& g)
-{
-    // Fondo general oscuro estilo DAW
-    g.fillAll (juce::Colour (0xff0a0b0d));
-
-    // Panel superior (Título y controles principales)
-    g.setColour (juce::Colour (0xff1a1d23));
-    g.fillRect (10, 10, 930, 65);
-    g.setColour (juce::Colour (0xff2d323b));
-    g.drawRect (10, 10, 930, 65, 1);
-
-    // Título "SPECTRUM PLANETARY"
-    g.setColour (juce::Colour (0xffff9a2e));
-    g.setFont (juce::Font("Roboto", 24.0f, juce::Font::bold));
-    g.drawText ("SPECTRUM PLANETARY", 25, 25, 300, 35, juce::Justification::left);
-
-    // Caja principal del Espectro
-    g.setColour (juce::Colour (0xff14161a));
-    g.fillRect (10, 85, 620, 360);
-    g.setColour (juce::Colour (0xff2d323b));
-    g.drawRect (10, 85, 620, 360, 1);
-
-    // Dibujar líneas de la retícula del espectro
-    g.setColour (juce::Colour (0xff20252d));
-    for (int y = 85; y < 445; y += 45)
-        g.drawHorizontalLine(y, 10.0f, 630.0f);
-
-    // Dibujar la curva del espectro en tiempo real
-    auto spec = proc.getSpectrumData();
-    juce::Path spectrumPath;
-    float w = 610.0f;
-    float h = 340.0f;
-    float dx = w / (float)spec.size();
-
-    for (size_t i = 0; i < spec.size(); ++i)
-    {
-        float x = 20.0f + i * dx;
-        float normY = juce::jmap(spec[i], -100.0f, 12.0f, 435.0f, 95.0f);
-        if (i == 0) spectrumPath.startNewSubPath(x, normY);
-        else spectrumPath.lineTo(x, normY);
-    }
-
-    g.setColour (juce::Colour (0xffff9a2e));
-    g.strokePath(spectrumPath, juce::PathStrokeType(2.0f));
-
-    // Panel de Medidores (Derecha)
-    g.setColour (juce::Colour (0xff1a1d23));
-    g.fillRect (640, 85, 300, 360);
-    g.setColour (juce::Colour (0xff2d323b));
-    g.drawRect (640, 85, 300, 360, 1);
-
-    g.setColour (juce::Colours::white);
-    g.setFont (16.0f);
-    g.drawText ("METERS (PEAK / RMS)", 650, 100, 280, 25, juce::Justification::center);
-
-    // Barras de medidores nativas
-    float pkL = juce::jmap(proc.peakL.load(), -48.0f, 0.0f, 0.0f, 200.0f);
-    float pkR = juce::jmap(proc.peakR.load(), -48.0f, 0.0f, 0.0f, 200.0f);
-
-    g.setColour(juce::Colours::darkgrey);
-    g.fillRect(700, 150, 25, 200);
-    g.fillRect(750, 150, 25, 200);
-
-    g.setColour(juce::Colour(0xff46d066));
-    g.fillRect(700, 350 - juce::jlimit(0.0f, 200.0f, pkL), 25, juce::jlimit(0.0f, 200.0f, pkL));
-    g.fillRect(750, 350 - juce::jlimit(0.0f, 200.0f, pkR), 25, juce::jlimit(0.0f, 200.0f, pkR));
+    stopTimer();
+    content.setLookAndFeel (nullptr);
 }
 
 void SpectrumEditor::resized()
 {
-    analyzeButton.setBounds(500, 25, 100, 35);
-    inputKnob.setBounds(350, 20, 45, 45);
-    outputKnob.setBounds(420, 20, 45, 45);
+    content.setTransform (juce::AffineTransform::scale ((float) getWidth() / 760.f));
+}
+
+void SpectrumEditor::pickMidi (int midi)
+{
+    midi = juce::jlimit (24, 95, midi);
+    setParam (proc.apvts, "root", (float) (midi % 12));
+    setParam (proc.apvts, "oct", (float) (midi / 12 - 1));
+}
+
+void SpectrumEditor::timerCallback()
+{
+    auto& A = proc.apvts;
+    const double now = juce::Time::getMillisecondCounterHiRes();
+    const double dt = juce::jlimit (0.001, 0.25, (now - lastMs) / 1000.0);
+    lastMs = now;
+    if (pv (A, "run") > 0.5f)
+    {
+        SpectrumEngine::Settings s;
+        s.res = (int) pv (A, "res"); s.win = (int) pv (A, "win"); s.channel = (int) pv (A, "channel");
+        s.bands = kBands[juce::jlimit (0, 5, (int) pv (A, "bands"))];
+        s.smooth = pv (A, "smooth"); s.decay = pv (A, "peakDecay"); s.gain = pv (A, "gain");
+        s.holdTime = pv (A, "holdTime"); s.holdDecay = pv (A, "holdDecay"); s.avgTime = pv (A, "avgTime"); s.avgSlope = pv (A, "avgSlope");
+        s.peakOn = pv (A, "peakOn") > 0.5f; s.holdOn = pv (A, "holdOn") > 0.5f; s.holdInf = pv (A, "holdInf") > 0.5f;
+        engine.update (proc.ringLeft(), proc.ringRight(), SpectrumProcessor::ringSize, proc.getWritePos(), proc.getSampleRate(), s, dt);
+        meters.tick (dt);
+        phase.tick();
+    }
+    spectrum.repaint();
 }
