@@ -4,10 +4,9 @@ using namespace ui;
 
 SpectrumEditor::SpectrumEditor (SpectrumProcessor& p)
     : AudioProcessorEditor (&p), proc (p),
-      spectrum (p.apvts, engine), meters (p), phase (p), keyboard (p.apvts), settings (p.apvts)
+      spectrum (p.apvts, p.analyzer), meters (p), phase (p), keyboard (p.apvts), settings (p.apvts)
 {
     auto& A = proc.apvts;
-    engine.reset();
     content.setBounds (0, 0, 760, 470);
     content.setLookAndFeel (&lnf);
     addAndMakeVisible (content);
@@ -19,7 +18,7 @@ SpectrumEditor::SpectrumEditor (SpectrumProcessor& p)
     knIn  = std::make_unique<KnobBox> (A, "inGain", "", dbText);   place (*knIn, 224, 6, 34, 52);
     knOut = std::make_unique<KnobBox> (A, "outGain", "", dbText);  place (*knOut, 262, 6, 34, 52);
     bRes = std::make_unique<CycleButton> (*A.getParameter ("res"), 0, 2);   place (*bRes, 302, 30, 58, 22);
-    bWin = std::make_unique<CycleButton> (*A.getParameter ("win"), 0, 3);   place (*bWin, 364, 30, 60, 22);
+    bWin = std::make_unique<CycleButton> (*A.getParameter ("win"), 0, 1);   place (*bWin, 364, 30, 60, 22);
     bRun1.setButtonText ("Analyze"); bRun1.setClickingTogglesState (true);
     runAtt1 = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (A, "run", bRun1);
     place (bRun1, 430, 30, 58, 22);
@@ -37,9 +36,9 @@ SpectrumEditor::SpectrumEditor (SpectrumProcessor& p)
     bRoot = std::make_unique<CycleButton> (*A.getParameter ("root"), 0, 11);  place (*bRoot, 436, 168, 118, 22);
     bOct  = std::make_unique<CycleButton> (*A.getParameter ("oct"), 1, 7);    place (*bOct, 436, 208, 118, 22);
     knGain   = std::make_unique<KnobBox> (A, "gain", "Gain", dbText);
-    knBands  = std::make_unique<KnobBox> (A, "bands", "Bands", [] (double v) { return juce::String (kBands[juce::jlimit (0, 5, (int) std::lround (v))]) + "/oct"; });
+    knBands  = std::make_unique<KnobBox> (A, "bands", "Bands", [] (double v) { return juce::String (kBands[juce::jlimit (0, 3, (int) std::lround (v))]) + "/oct"; });
     knDecay  = std::make_unique<KnobBox> (A, "peakDecay", "Decay", [] (double v) { return juce::String (v, 0) + "dB/s"; });
-    knSmooth = std::make_unique<KnobBox> (A, "smooth", "Smooth", [] (double v) { return juce::String ((int) std::lround (v * 100.0)) + "%"; });
+    knSmooth = std::make_unique<KnobBox> (A, "integ", "Time", [] (double v) { return juce::String ((int) std::lround (v)) + "ms"; });
     place (*knGain, 433, 236, 62, 62); place (*knBands, 495, 236, 62, 62);
     place (*knDecay, 433, 300, 62, 62); place (*knSmooth, 495, 300, 62, 62);
     bRun2.setButtonText ("Analyze"); bRun2.setClickingTogglesState (true);
@@ -55,7 +54,7 @@ SpectrumEditor::SpectrumEditor (SpectrumProcessor& p)
     keyboard.onPick = [this] (int m) { pickMidi (m); };
     place (settings, 6, 64, 554, 324);
     settings.setVisible (false);
-    content.onReset = [this] { proc.requestReset(); engine.reset(); };
+    content.onReset = [this] { proc.requestReset(); };
 
     setSize (760, 470);
     setResizable (true, true);
@@ -85,21 +84,9 @@ void SpectrumEditor::pickMidi (int midi)
 
 void SpectrumEditor::timerCallback()
 {
-    auto& A = proc.apvts;
     const double now = juce::Time::getMillisecondCounterHiRes();
     const double dt = juce::jlimit (0.001, 0.25, (now - lastMs) / 1000.0);
     lastMs = now;
-    if (pv (A, "run") > 0.5f)
-    {
-        SpectrumEngine::Settings s;
-        s.res = (int) pv (A, "res"); s.win = (int) pv (A, "win"); s.channel = (int) pv (A, "channel");
-        s.bands = kBands[juce::jlimit (0, 5, (int) pv (A, "bands"))];
-        s.smooth = pv (A, "smooth"); s.decay = pv (A, "peakDecay"); s.gain = pv (A, "gain");
-        s.holdTime = pv (A, "holdTime"); s.holdDecay = pv (A, "holdDecay"); s.avgTime = pv (A, "avgTime"); s.avgSlope = pv (A, "avgSlope");
-        s.peakOn = pv (A, "peakOn") > 0.5f; s.holdOn = pv (A, "holdOn") > 0.5f; s.holdInf = pv (A, "holdInf") > 0.5f;
-        engine.update (proc.ringLeft(), proc.ringRight(), SpectrumProcessor::ringSize, proc.getWritePos(), proc.getSampleRate(), s, dt);
-        meters.tick (dt);
-        phase.tick();
-    }
+    if (pv (proc.apvts, "run") > 0.5f) { meters.tick (dt); phase.tick(); }
     spectrum.repaint();
 }
