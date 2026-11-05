@@ -10,7 +10,7 @@ namespace ui
 static const juce::Colour kOrange (0xffff9a2e), kText (0xffe2e5ea), kMuted (0xff8e96a3), kLine (0xff2d323b),
                           kPanel (0xff1a1d23), kDeep (0xff0f1216), kBtn (0xff262a32);
 static const double kWidths[] = { 0.5, 1.0, 2.0, 3.0, 6.0, 12.0, 24.0 };
-static const int kBands[] = { 3, 4, 6, 12 };
+static const int kBands[] = { 3, 4, 6 };
 static const char* kNote[] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
 static const char* kSolf[] = { "Do", "Do#", "Re", "Re#", "Mi", "Fa", "Fa#", "Sol", "Sol#", "La", "La#", "Si" };
 
@@ -21,9 +21,12 @@ inline void setF (juce::Graphics& g, float h, bool bold = false) { g.setFont (h)
 inline float pv (juce::AudioProcessorValueTreeState& a, const char* id) { return a.getRawParameterValue (id)->load(); }
 inline int currentMidi (juce::AudioProcessorValueTreeState& a) { return ((int) pv (a, "oct") + 1) * 12 + (int) pv (a, "root"); }
 inline juce::String noteName (int midi) { return juce::String (kNote[((midi % 12) + 12) % 12]) + juce::String (midi / 12 - 1); }
+inline juce::RangedAudioParameter* rp (juce::AudioProcessorValueTreeState& a, const char* id)
+{ return dynamic_cast<juce::RangedAudioParameter*> (a.getParameter (id)); }
 inline void setParam (juce::AudioProcessorValueTreeState& a, const char* id, float denorm)
 {
-    auto* p = a.getParameter (id);
+    auto* p = rp (a, id);
+    if (p == nullptr) return;
     p->beginChangeGesture(); p->setValueNotifyingHost (p->convertTo0to1 (denorm)); p->endChangeGesture();
 }
 
@@ -143,7 +146,7 @@ private:
     juce::ParameterAttachment att;
 };
 
-// ---------------------------------------------------------------- vista del espectro
+// ---------------------------------------------------------------- vista del espectro (Seven Phases)
 class SpectrumView : public juce::Component
 {
 public:
@@ -155,9 +158,16 @@ public:
     void mouseDown (const juce::MouseEvent& e) override
     {
         const float L = 30.f, Wd = (float) getWidth() - L - 6.f;
-        if (onPick == nullptr || e.position.x < L) return;
-        const double f = 20.0 * std::pow (10.0, 3.0 * (e.position.x - L) / Wd);
+        const double fmin = eng.freqMinA.load(), fmax = eng.freqMaxA.load();
+        if (onPick == nullptr || fmin <= 0.0 || fmax <= fmin || e.position.x < L) return;
+        const double f = fmin * std::pow (fmax / fmin, (e.position.x - L) / Wd);
         onPick ((int) std::lround (69.0 + 12.0 * std::log2 (f / 440.0)));
+    }
+
+    static float xOf (double f, float L, float Wd, double fmin, double fmax)
+    {
+        if (fmin <= 0.0 || fmax <= fmin || f <= 0.0) return L;
+        return L + Wd * (float) (std::log (f / fmin) / std::log (fmax / fmin));
     }
 
     void paint (juce::Graphics& g) override
@@ -165,7 +175,9 @@ public:
         auto& A = apvts;
         const float ceilDb = pv (A, "ceiling"), range = pv (A, "range"), gridDb = pv (A, "gridDb");
         const float L = 30.f, T = 6.f, Wd = (float) getWidth() - L - 6.f, Ht = (float) getHeight() - T - 20.f, B = T + Ht;
-        auto X = [=] (double f) { return L + (float) (std::log10 (juce::jlimit (20.0, 20000.0, f) / 20.0) / 3.0) * Wd; };
+        const double fmin = eng.freqMinA.load(), fmax = eng.freqMaxA.load();
+        const int nb = juce::jlimit (0, FilterBankAnalyzer::maxBands, eng.numBands.load());
+        auto X = [=] (double f) { return xOf (f, L, Wd, fmin, fmax); };
         auto Y = [=] (float db) { return T + (ceilDb - juce::jlimit (ceilDb - range, ceilDb, db)) / range * Ht; };
 
         g.fillAll (juce::Colour (0xff101318));
@@ -177,71 +189,69 @@ public:
             g.setColour (juce::Colour (0xff2a3038)); g.drawHorizontalLine (y, L, L + Wd);
             g.setColour (kMuted); g.drawText (juce::String ((int) v), 0, y - 6, (int) L - 4, 12, juce::Justification::centredRight, false);
         }
-        const int gm = (int) pv (A, "grid");
-        auto vline = [&] (double f, const char* label, bool major)
+
+        const int gm = (int) pv (A, "grid");   // 0 Octave, 1 Decade, 2 None
+        auto vline = [&] (double f, const char* label)
         {
             const float x = std::floor (X (f));
-            g.setColour (major ? juce::Colour (0xff3a424d) : juce::Colour (0xff232830)); g.drawVerticalLine ((int) x, T, B);
+            if (x < L || x > L + Wd) return;
+            g.setColour (juce::Colour (0xff3a424d)); g.drawVerticalLine ((int) x, T, B);
             if (label != nullptr) { g.setColour (kMuted); g.drawText (label, (int) x - 20, (int) B + 4, 40, 12, juce::Justification::centred, false); }
         };
         if (gm == 0)
         {
             static const double fr[] = { 31.5, 63, 125, 250, 500, 1000, 2000, 4000, 8000, 16000 };
             static const char* tx[] = { "31", "63", "125", "250", "500", "1k", "2k", "4k", "8k", "16k" };
-            for (int i = 0; i < 10; ++i) vline (fr[i], tx[i], true);
+            for (int i = 0; i < 10; ++i) vline (fr[i], tx[i]);
         }
         else if (gm == 1)
         {
             for (double dec = 10.0; dec <= 10000.0; dec *= 10.0)
-                for (int k = 1; k < 10; ++k) vline (k * dec, nullptr, k == 1);
+                for (int k = 1; k < 10; ++k) vline (k * dec, nullptr);
             static const double fr[] = { 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000 };
             static const char* tx[] = { "20", "50", "100", "200", "500", "1k", "2k", "5k", "10k", "20k" };
-            g.setColour (kMuted);
-            for (int i = 0; i < 10; ++i) g.drawText (tx[i], (int) X (fr[i]) - 20, (int) B + 4, 40, 12, juce::Justification::centred, false);
+            for (int i = 0; i < 10; ++i) { const float x = X (fr[i]); if (x >= L && x <= L + Wd) { g.setColour (kMuted); g.drawText (tx[i], (int) x - 20, (int) B + 4, 40, 12, juce::Justification::centred, false); } }
         }
 
-        const int nb = juce::jmin (eng.numBands.load (std::memory_order_acquire), (int) FilterBankAnalyzer::maxBands);
         float bars[FilterBankAnalyzer::maxBands], holds[FilterBankAnalyzer::maxBands], avgs[FilterBankAnalyzer::maxBands];
         for (int i = 0; i < nb; ++i) { bars[i] = eng.bar[i].load(); holds[i] = eng.hold[i].load(); avgs[i] = eng.avg[i].load(); }
+        const int  style  = (int) pv (A, "style");     // 0 Bars, 1 Curve, 2 Curve Fill
+        const bool showPk = pv (A, "peakOn") > 0.5f;
+        const float spacing = nb > 1 ? Wd / (float) (nb - 1) : Wd;
+        const float bw = juce::jmax (1.f, spacing * 0.8f);
 
-        const int style = (int) pv (A, "style");
-        juce::ColourGradient grad (juce::Colour (0xffffc15e), 0.f, T, juce::Colour (0xffb8600a), 0.f, B, false);
-        if (style == 0)
+        if (showPk)
         {
+            juce::ColourGradient grad (juce::Colour (0xffffc15e), 0.f, T, juce::Colour (0xffb8600a), 0.f, B, false);
+            g.setGradientFill (grad);
             for (int i = 0; i < nb; ++i)
             {
-                const float x1 = X (eng.lo[i]), x2 = X (eng.hi[i]), y = Y (bars[i]);
-                g.setGradientFill (grad);
-                g.fillRect (x1 + 0.5f, y, juce::jmax (1.f, x2 - x1 - 1.f), B - y);
+                const float xc = X (eng.fc[i]), y = Y (bars[i]);
+                g.fillRect (xc - bw * 0.5f, y, bw, B - y);
             }
         }
-        else if (nb > 1)
+
+        auto line = [&] (const float* arr, juce::Colour c, float thick)
         {
-            juce::Path line, fill;
-            for (int i = 0; i < nb; ++i)
+            if (style == 0)
             {
-                const float x = X (eng.fc[i]), y = Y (bars[i]);
-                if (i == 0) { line.startNewSubPath (x, y); fill.startNewSubPath (x, B); fill.lineTo (x, y); }
-                else { line.lineTo (x, y); fill.lineTo (x, y); }
+                g.setColour (c);
+                for (int i = 0; i < nb; ++i) g.fillRect (X (eng.fc[i]) - bw * 0.5f, Y (arr[i]), bw, thick);
+                return;
             }
-            if (style == 2)
-            {
-                fill.lineTo (X (eng.fc[nb - 1]), B); fill.closeSubPath();
-                g.setGradientFill (juce::ColourGradient (kOrange.withAlpha (0.55f), 0.f, T, kOrange.withAlpha (0.05f), 0.f, B, false));
-                g.fillPath (fill);
-            }
-            g.setColour (kOrange); g.strokePath (line, juce::PathStrokeType (2.f));
-        }
-        auto curve = [&] (const float* arr, juce::Colour c, float w)
-        {
             juce::Path p;
             for (int i = 0; i < nb; ++i) { const float x = X (eng.fc[i]), y = Y (arr[i]); if (i == 0) p.startNewSubPath (x, y); else p.lineTo (x, y); }
-            g.setColour (c); g.strokePath (p, juce::PathStrokeType (w));
+            if (style == 2)
+            {
+                juce::Path fillP (p); fillP.lineTo (X (eng.fc[nb - 1]), B); fillP.lineTo (X (eng.fc[0]), B); fillP.closeSubPath();
+                g.setColour (c.withAlpha (0.25f)); g.fillPath (fillP);
+            }
+            g.setColour (c); g.strokePath (p, juce::PathStrokeType (thick));
         };
-        if (pv (A, "avgOn") > 0.5f) curve (avgs, juce::Colour (0xe6ffe27a), 3.f);
-        if (pv (A, "holdOn") > 0.5f) curve (holds, juce::Colour (0xe6e8f0ff), 2.f);
+        if (pv (A, "avgOn") > 0.5f) line (avgs, juce::Colour (0xe6ffe27a), 3.f);
+        if (pv (A, "holdOn") > 0.5f) line (holds, juce::Colour (0xe6e8f0ff), 2.f);
 
-        // marco de la nota seleccionada: solo se muestra la frecuencia de la nota
+        // marco de la nota seleccionada: solo la frecuencia de la nota
         const int m = currentMidi (A);
         const double w = kWidths[juce::jlimit (0, 6, (int) pv (A, "width"))];
         const float x1 = X (midiFreq (m - w)), x2 = X (midiFreq (m + w)), xc = X (midiFreq (m));
@@ -253,11 +263,11 @@ public:
         auto label = [&] (const juce::String& t, float cx, float cy)
         {
             setF (g, 12.f);
-            const float bw = (float) t.length() * 6.8f + 14.f;
-            const float bx = juce::jlimit (L, L + Wd - bw, cx - bw * 0.5f);
-            g.setColour (juce::Colour (0xf01c160e)); g.fillRect (bx, cy - 10.f, bw, 20.f);
-            g.setColour (juce::Colour (0xff8a5a1e)); g.drawRect (bx, cy - 10.f, bw, 20.f, 1.f);
-            g.setColour (juce::Colour (0xffffb255)); g.drawText (t, (int) bx, (int) cy - 10, (int) bw, 20, juce::Justification::centred, false);
+            const float bwl = (float) t.length() * 6.8f + 14.f;
+            const float bx = juce::jlimit (L, L + Wd - bwl, cx - bwl * 0.5f);
+            g.setColour (juce::Colour (0xf01c160e)); g.fillRect (bx, cy - 10.f, bwl, 20.f);
+            g.setColour (juce::Colour (0xff8a5a1e)); g.drawRect (bx, cy - 10.f, bwl, 20.f, 1.f);
+            g.setColour (juce::Colour (0xffffb255)); g.drawText (t, (int) bx, (int) cy - 10, (int) bwl, 20, juce::Justification::centred, false);
         };
         label (juce::String (midiFreq (m), 2) + " Hz", xc, T + Ht * 0.14f);
 
@@ -271,14 +281,14 @@ public:
         g.drawText ("Range: " + noteName (m - c) + " - " + noteName (m + c), (int) tx, (int) ty + 22, (int) tw, 14, juce::Justification::centred, false);
         g.drawText ("Width: " + pmStr() + juce::String (w) + " Semitone" + (w > 1.0 ? "s" : ""), (int) tx, (int) ty + 37, (int) tw, 14, juce::Justification::centred, false);
 
-        if (hasHov && hov.x > L && hov.x < L + Wd && hov.y > T && hov.y < B)
+        if (hasHov && hov.x > L && hov.x < L + Wd && hov.y > T && hov.y < B && fmin > 0.0 && nb > 1)
         {
-            const double f = 20.0 * std::pow (10.0, 3.0 * (hov.x - L) / Wd);
+            const double f = fmin * std::pow (fmax / fmin, (hov.x - L) / Wd);
             const int mm = (int) std::lround (69.0 + 12.0 * std::log2 (f / 440.0));
-            float lv = -150.f;
-            for (int i = 0; i < nb; ++i) if (f >= eng.lo[i] && f < eng.hi[i]) lv = bars[i];
+            int idx = (int) std::lround (std::log (f / fmin) / std::log (fmax / fmin) * (nb - 1));
+            idx = juce::jlimit (0, nb - 1, idx);
             g.setColour (juce::Colours::white.withAlpha (0.45f)); g.drawVerticalLine ((int) hov.x, T, B);
-            label (juce::String (f, 1) + " Hz | " + noteName (mm) + " | " + juce::String (lv, 1) + " dB", hov.x, T + Ht * 0.07f);
+            label (juce::String (f, 1) + " Hz | " + noteName (mm) + " | " + juce::String (bars[idx], 1) + " dB", hov.x, T + Ht * 0.07f);
         }
     }
 private:
@@ -641,8 +651,8 @@ public:
         g.setColour (kOrange); g.drawText ("SPECTRUM", 52, 10, 160, 20, juce::Justification::centredLeft, false);
         g.setColour (juce::Colour (0xffd3d6dc)); g.drawText ("PLANETARY", 52, 30, 160, 20, juce::Justification::centredLeft, false);
         g.setColour (kText); setF (g, 11.5f);
-        g.drawText ("Resolution", 302, 10, 58, 14, juce::Justification::centred, false);
-        g.drawText ("Detector", 364, 10, 60, 14, juce::Justification::centred, false);
+        g.drawText ("Bands/Oct", 302, 10, 58, 14, juce::Justification::centred, false);
+        g.drawText ("Freq. Grid", 364, 10, 60, 14, juce::Justification::centred, false);
         setF (g, 24.f, true); g.setColour (juce::Colour (0xffc9ccd2));
         g.drawText ("METERS", 566, 6, 188, 52, juce::Justification::centred, false);
         setF (g, 12.f); g.setColour (kText);
