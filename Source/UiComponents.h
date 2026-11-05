@@ -9,7 +9,7 @@ namespace ui
 {
 static const juce::Colour kOrange (0xffff9a2e), kText (0xffe2e5ea), kMuted (0xff8e96a3), kLine (0xff2d323b),
                           kPanel (0xff1a1d23), kDeep (0xff0f1216), kBtn (0xff262a32);
-static const double kWidths[] = { 0.5, 1.0, 2.0, 3.0, 6.0, 12.0, 24.0 };
+static const double kWidths[] = { 1.0, 3.0, 6.0, 9.0, 12.0 };
 static const int kBands[] = { 3, 4, 6 };
 static const char* kNote[] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
 static const char* kSolf[] = { "Do", "Do#", "Re", "Re#", "Mi", "Fa", "Fa#", "Sol", "Sol#", "La", "La#", "Si" };
@@ -146,7 +146,7 @@ private:
     juce::ParameterAttachment att;
 };
 
-// ---------------------------------------------------------------- vista del espectro (Seven Phases)
+// ---------------------------------------------------------------- vista del espectro
 class SpectrumView : public juce::Component
 {
 public:
@@ -160,14 +160,19 @@ public:
         const float L = 30.f, Wd = (float) getWidth() - L - 6.f;
         const double fmin = eng.freqMinA.load(), fmax = eng.freqMaxA.load();
         if (onPick == nullptr || fmin <= 0.0 || fmax <= fmin || e.position.x < L) return;
-        const double f = fmin * std::pow (fmax / fmin, (e.position.x - L) / Wd);
-        onPick ((int) std::lround (69.0 + 12.0 * std::log2 (f / 440.0)));
+        onPick (midiAt (e.position.x, L, Wd, fmin, fmax));
     }
 
     static float xOf (double f, float L, float Wd, double fmin, double fmax)
     {
         if (fmin <= 0.0 || fmax <= fmin || f <= 0.0) return L;
         return L + Wd * (float) (std::log (f / fmin) / std::log (fmax / fmin));
+    }
+
+    static int midiAt (float x, float L, float Wd, double fmin, double fmax)
+    {
+        const double f = fmin * std::pow (fmax / fmin, (double) (x - L) / (double) Wd);
+        return (int) std::lround (69.0 + 12.0 * std::log2 (f / 440.0));
     }
 
     void paint (juce::Graphics& g) override
@@ -190,7 +195,7 @@ public:
             g.setColour (kMuted); g.drawText (juce::String ((int) v), 0, y - 6, (int) L - 4, 12, juce::Justification::centredRight, false);
         }
 
-        const int gm = (int) pv (A, "grid");   // 0 Octave, 1 Decade, 2 None
+        const int gm = (int) pv (A, "grid");
         auto vline = [&] (double f, const char* label)
         {
             const float x = std::floor (X (f));
@@ -215,12 +220,12 @@ public:
 
         float bars[FilterBankAnalyzer::maxBands], holds[FilterBankAnalyzer::maxBands], avgs[FilterBankAnalyzer::maxBands];
         for (int i = 0; i < nb; ++i) { bars[i] = eng.bar[i].load(); holds[i] = eng.hold[i].load(); avgs[i] = eng.avg[i].load(); }
-        const int  style  = (int) pv (A, "style");     // 0 Bars, 1 Curve, 2 Curve Fill
+        const int  style  = (int) pv (A, "style");
         const bool showPk = pv (A, "peakOn") > 0.5f;
         const float spacing = nb > 1 ? Wd / (float) (nb - 1) : Wd;
         const float bw = juce::jmax (1.f, spacing * 0.8f);
 
-        if (showPk)
+        if (showPk && nb > 0)
         {
             juce::ColourGradient grad (juce::Colour (0xffffc15e), 0.f, T, juce::Colour (0xffb8600a), 0.f, B, false);
             g.setGradientFill (grad);
@@ -233,6 +238,7 @@ public:
 
         auto line = [&] (const float* arr, juce::Colour c, float thick)
         {
+            if (nb < 2) return;
             if (style == 0)
             {
                 g.setColour (c);
@@ -251,51 +257,112 @@ public:
         if (pv (A, "avgOn") > 0.5f) line (avgs, juce::Colour (0xe6ffe27a), 3.f);
         if (pv (A, "holdOn") > 0.5f) line (holds, juce::Colour (0xe6e8f0ff), 2.f);
 
-        // marco de la nota seleccionada: solo la frecuencia de la nota
+        // marco de la nota seleccionada (+1, +3, +6, +9, +12 semitonos)
         const int m = currentMidi (A);
-        const double w = kWidths[juce::jlimit (0, 6, (int) pv (A, "width"))];
+        const double w = kWidths[juce::jlimit (0, 4, (int) pv (A, "width"))];
         const float x1 = X (midiFreq (m - w)), x2 = X (midiFreq (m + w)), xc = X (midiFreq (m));
         g.setColour (juce::Colour (0x24beb4a0)); g.fillRect (x1, T, x2 - x1, Ht);
         g.setColour (kOrange); g.drawRect (x1, T, x2 - x1, Ht, 2.f);
         g.setColour (kOrange.withAlpha (0.8f));
         for (float y = T; y < B; y += 8.f) g.fillRect (xc - 0.5f, y, 1.f, 4.f);
 
-        auto label = [&] (const juce::String& t, float cx, float cy)
-        {
-            setF (g, 12.f);
-            const float bwl = (float) t.length() * 6.8f + 14.f;
-            const float bx = juce::jlimit (L, L + Wd - bwl, cx - bwl * 0.5f);
-            g.setColour (juce::Colour (0xf01c160e)); g.fillRect (bx, cy - 10.f, bwl, 20.f);
-            g.setColour (juce::Colour (0xff8a5a1e)); g.drawRect (bx, cy - 10.f, bwl, 20.f, 1.f);
-            g.setColour (juce::Colour (0xffffb255)); g.drawText (t, (int) bx, (int) cy - 10, (int) bwl, 20, juce::Justification::centred, false);
-        };
-        label (juce::String (midiFreq (m), 2) + " Hz", xc, T + Ht * 0.14f);
+        // indicador superior derecho: nota | frecuencia (cursor o nota enmarcada)
+        const bool inside = hasHov && hov.x > L && hov.x < L + Wd && hov.y > T && hov.y < B && fmin > 0.0;
+        const int infoMidi = inside ? midiAt (hov.x, L, Wd, fmin, fmax) : m;
+        const juce::String info = noteName (infoMidi) + " | " + juce::String (midiFreq (infoMidi), 2) + " Hz";
+        setF (g, 12.f, true);
+        const float ibw = (float) info.length() * 7.4f + 16.f, ibx = L + Wd - ibw - 4.f;
+        g.setColour (juce::Colour (0xe6161820)); g.fillRoundedRectangle (ibx, T + 4.f, ibw, 20.f, 4.f);
+        g.setColour (juce::Colour (0xff6a5a44)); g.drawRoundedRectangle (ibx, T + 4.f, ibw, 20.f, 4.f, 1.f);
+        g.setColour (kOrange); g.drawText (info, (int) ibx, (int) T + 4, (int) ibw, 20, juce::Justification::centred, false);
 
-        const int c = (int) std::ceil (w);
-        const float tw = 128.f, th = 56.f, tx = juce::jlimit (L, L + Wd - tw, xc - tw * 0.5f), ty = T + Ht * 0.28f;
-        g.setColour (juce::Colour (0xf2161820)); g.fillRect (tx, ty, tw, th);
-        g.setColour (juce::Colour (0xff6a5a44)); g.drawRect (tx, ty, tw, th, 1.f);
-        g.setColour (kOrange); setF (g, 15.f, true);
-        g.drawText (noteName (m) + " (" + juce::String (kSolf[m % 12]) + juce::String (m / 12 - 1) + ")", (int) tx, (int) ty + 3, (int) tw, 18, juce::Justification::centred, false);
-        g.setColour (juce::Colour (0xffd9dde3)); setF (g, 11.5f);
-        g.drawText ("Range: " + noteName (m - c) + " - " + noteName (m + c), (int) tx, (int) ty + 22, (int) tw, 14, juce::Justification::centred, false);
-        g.drawText ("Width: " + pmStr() + juce::String (w) + " Semitone" + (w > 1.0 ? "s" : ""), (int) tx, (int) ty + 37, (int) tw, 14, juce::Justification::centred, false);
-
-        if (hasHov && hov.x > L && hov.x < L + Wd && hov.y > T && hov.y < B && fmin > 0.0 && nb > 1)
-        {
-            const double f = fmin * std::pow (fmax / fmin, (hov.x - L) / Wd);
-            const int mm = (int) std::lround (69.0 + 12.0 * std::log2 (f / 440.0));
-            int idx = (int) std::lround (std::log (f / fmin) / std::log (fmax / fmin) * (nb - 1));
-            idx = juce::jlimit (0, nb - 1, idx);
-            g.setColour (juce::Colours::white.withAlpha (0.45f)); g.drawVerticalLine ((int) hov.x, T, B);
-            label (juce::String (f, 1) + " Hz | " + noteName (mm) + " | " + juce::String (bars[idx], 1) + " dB", hov.x, T + Ht * 0.07f);
-        }
+        if (inside) { g.setColour (juce::Colours::white.withAlpha (0.45f)); g.drawVerticalLine ((int) hov.x, T, B); }
     }
 private:
     juce::AudioProcessorValueTreeState& apvts;
     FilterBankAnalyzer& eng;
     juce::Point<float> hov;
     bool hasHov = false;
+};
+
+// ---------------------------------------------------------------- teclado: 3 octavas visibles, barra de desplazamiento
+class KeyboardView : public juce::Component
+{
+public:
+    explicit KeyboardView (juce::AudioProcessorValueTreeState& a) : apvts (a) {}
+    std::function<void (int)> onPick;
+    int start = 48;
+    static constexpr int span = 36;
+
+    static bool isBlack (int m) { const int n = m % 12; return n == 1 || n == 3 || n == 6 || n == 8 || n == 10; }
+
+    void paint (juce::Graphics& g) override
+    {
+        const float W = (float) getWidth(), H = (float) getHeight(), kw = W / 21.f, bw = kw * 0.6f;
+        const int root = currentMidi (apvts);
+        const double w = kWidths[juce::jlimit (0, 4, (int) pv (apvts, "width"))];
+        g.fillAll (juce::Colour (0xff0e1013));
+        for (int m = start; m < start + span; ++m)
+        {
+            if (isBlack (m)) continue;
+            const float x = whitesBefore (m) * kw;
+            const juce::Colour c = m == root ? kOrange : std::abs ((double) (m - root)) <= w ? juce::Colour (0xffffc98a) : juce::Colour (0xffe8e8e8);
+            g.setColour (c); g.fillRect (x, 0.f, kw, H);
+            g.setColour (juce::Colour (0xff222222)); g.drawRect (x, 0.f, kw, H, 1.f);
+            if (m % 12 == 0) { g.setColour (juce::Colour (0xff444444)); setF (g, 10.f); g.drawText ("C" + juce::String (m / 12 - 1), (int) x, (int) H - 16, (int) kw, 14, juce::Justification::centred, false); }
+        }
+        for (int m = start; m < start + span; ++m)
+        {
+            if (! isBlack (m)) continue;
+            const float cx = whitesBefore (m) * kw;
+            const juce::Colour c = m == root ? juce::Colour (0xffd97a14) : std::abs ((double) (m - root)) <= w ? juce::Colour (0xff9a5a1a) : juce::Colour (0xff111111);
+            g.setColour (c); g.fillRect (cx - bw * 0.5f, 0.f, bw, H * 0.62f);
+        }
+    }
+
+    void mouseDown (const juce::MouseEvent& e) override
+    {
+        const float kw = (float) getWidth() / 21.f, bw = kw * 0.6f;
+        for (int m = start; m < start + span; ++m)
+            if (isBlack (m) && juce::Rectangle<float> (whitesBefore (m) * kw - bw * 0.5f, 0.f, bw, (float) getHeight() * 0.62f).contains (e.position))
+            { if (onPick) onPick (m); return; }
+        for (int m = start; m < start + span; ++m)
+            if (! isBlack (m) && juce::Rectangle<float> (whitesBefore (m) * kw, 0.f, kw, (float) getHeight()).contains (e.position))
+            { if (onPick) onPick (m); return; }
+    }
+
+private:
+    juce::AudioProcessorValueTreeState& apvts;
+    int whitesBefore (int m) const { int c = 0; for (int i = start; i < m; ++i) if (! isBlack (i)) ++c; return c; }
+};
+
+class KeyScroll : public juce::Component
+{
+public:
+    std::function<void (int)> onStart;
+    int start = 48;
+    static constexpr int minStart = 24, maxStart = 84, span = 36;
+
+    void paint (juce::Graphics& g) override
+    {
+        const float W = (float) getWidth(), H = (float) getHeight(), tw = thumbW(), tx = thumbX (start, W, tw);
+        g.setColour (juce::Colour (0xff0e1013)); g.fillRoundedRectangle (0.f, 0.f, W, H, 3.f);
+        g.setColour (kOrange.withAlpha (0.85f)); g.fillRoundedRectangle (tx, 0.f, tw, H, 3.f);
+    }
+    void mouseDown (const juce::MouseEvent& e) override { moveTo (e.position.x); }
+    void mouseDrag (const juce::MouseEvent& e) override { moveTo (e.position.x); }
+
+private:
+    float thumbW() const { return (float) getWidth() * (float) span / 96.f; }
+    static float thumbX (int s, float W, float tw) { return (W - tw) * (float) (s - minStart) / (float) (maxStart - minStart); }
+    void moveTo (float x)
+    {
+        const float W = (float) getWidth(), tw = thumbW();
+        const float t = juce::jlimit (0.f, 1.f, (x - tw * 0.5f) / (W - tw));
+        int s = minStart + 12 * (int) std::lround (t * (float) (maxStart - minStart) / 12.f);
+        s = juce::jlimit (minStart, maxStart, s);
+        if (s != start) { start = s; if (onStart) onStart (s); repaint(); }
+    }
 };
 
 // ---------------------------------------------------------------- panel LUFS / True Peak / Peak / RMS
@@ -484,57 +551,6 @@ private:
     float corr = 0.f, width = 0.f;
 };
 
-// ---------------------------------------------------------------- teclado
-class KeyboardView : public juce::Component
-{
-public:
-    explicit KeyboardView (juce::AudioProcessorValueTreeState& a) : apvts (a) {}
-    std::function<void (int)> onPick;
-    static constexpr int first = 48, last = 84;
-
-    void paint (juce::Graphics& g) override
-    {
-        for (int i = 0; i < 2; ++i)
-        {
-            g.setColour (juce::Colour (0xff0e1013)); g.fillRoundedRectangle (1.f + (float) i * 18.f, 0.f, 14.f, (float) getHeight(), 3.f);
-            g.setColour (juce::Colour (0xff3a404a)); g.drawRoundedRectangle (1.5f + (float) i * 18.f, 0.5f, 13.f, (float) getHeight() - 1.f, 3.f, 1.f);
-            g.setColour (juce::Colour (0xff555b66)); g.fillRoundedRectangle (3.f + (float) i * 18.f, (float) getHeight() * 0.45f, 10.f, 14.f, 2.f);
-        }
-        const int root = currentMidi (apvts);
-        const double w = kWidths[juce::jlimit (0, 6, (int) pv (apvts, "width"))];
-        const float kw = keyW();
-        for (int m = first; m <= last; ++m)
-        {
-            if (isBlack (m)) continue;
-            auto r = whiteRect (m);
-            g.setColour (m == root ? kOrange : std::abs ((double) (m - root)) <= w ? juce::Colour (0xffffc98a) : juce::Colour (0xffe6e6e6));
-            g.fillRect (r.reduced (0.5f, 0.f));
-            g.setColour (juce::Colour (0xff222222)); g.drawRect (r, 1.f);
-            if (m % 12 == 0) { g.setColour (juce::Colour (0xff444444)); setF (g, 9.5f); g.drawText ("C" + juce::String (m / 12 - 1), r.toNearestInt().withTrimmedTop ((int) r.getHeight() - 14), juce::Justification::centred, false); }
-        }
-        for (int m = first; m <= last; ++m)
-        {
-            if (! isBlack (m)) continue;
-            auto r = blackRect (m, kw);
-            g.setColour (m == root ? juce::Colour (0xffd97a14) : std::abs ((double) (m - root)) <= w ? juce::Colour (0xff9a5a1a) : juce::Colour (0xff111111));
-            g.fillRect (r);
-        }
-    }
-    void mouseDown (const juce::MouseEvent& e) override
-    {
-        const float kw = keyW();
-        for (int m = first; m <= last; ++m) if (isBlack (m) && blackRect (m, kw).contains (e.position)) { if (onPick) onPick (m); return; }
-        for (int m = first; m <= last; ++m) if (! isBlack (m) && whiteRect (m).contains (e.position)) { if (onPick) onPick (m); return; }
-    }
-private:
-    juce::AudioProcessorValueTreeState& apvts;
-    static bool isBlack (int m) { const int n = m % 12; return n == 1 || n == 3 || n == 6 || n == 8 || n == 10; }
-    static int whiteIndex (int m) { int c = 0; for (int i = first; i < m; ++i) if (! isBlack (i)) ++c; return c; }
-    float keyW() const { int c = 0; for (int i = first; i <= last; ++i) if (! isBlack (i)) ++c; return ((float) getWidth() - 40.f) / (float) c; }
-    juce::Rectangle<float> whiteRect (int m) const { const float kw = keyW(); return { 40.f + (float) whiteIndex (m) * kw, 0.f, kw, (float) getHeight() }; }
-    juce::Rectangle<float> blackRect (int m, float kw) const { return { 40.f + (float) whiteIndex (m) * kw - kw * 0.3f, 0.f, kw * 0.6f, (float) getHeight() * 0.62f }; }
-};
-
 // ---------------------------------------------------------------- ventana de ajustes (como "Spectrum Analyzer Settings")
 class SettingsPanel : public juce::Component
 {
@@ -634,6 +650,7 @@ class Content : public juce::Component
 {
 public:
     std::function<void()> onReset;
+    bool frameOn = true;
     void mouseDoubleClick (const juce::MouseEvent& e) override { if (onReset && juce::Rectangle<int> (566, 6, 188, 52).contains (e.getPosition())) onReset(); }
     void paint (juce::Graphics& g) override
     {
@@ -650,15 +667,14 @@ public:
         setF (g, 17.f, true);
         g.setColour (kOrange); g.drawText ("SPECTRUM", 52, 10, 160, 20, juce::Justification::centredLeft, false);
         g.setColour (juce::Colour (0xffd3d6dc)); g.drawText ("PLANETARY", 52, 30, 160, 20, juce::Justification::centredLeft, false);
-        g.setColour (kText); setF (g, 11.5f);
-        g.drawText ("Bands/Oct", 302, 10, 58, 14, juce::Justification::centred, false);
-        g.drawText ("Freq. Grid", 364, 10, 60, 14, juce::Justification::centred, false);
         setF (g, 24.f, true); g.setColour (juce::Colour (0xffc9ccd2));
         g.drawText ("METERS", 566, 6, 188, 52, juce::Justification::centred, false);
-        setF (g, 12.f); g.setColour (kText);
+        const float a = frameOn ? 1.f : 0.35f;
+        setF (g, 12.f);
+        g.setColour (kText.withAlpha (a));
         g.drawText ("FRAME ADJUST", 430, 70, 130, 14, juce::Justification::centred, false);
-        g.setColour (kMuted); g.drawText ("(" + pmStr() + " semitones)", 430, 112, 130, 12, juce::Justification::centred, false);
-        g.setColour (kText);
+        g.setColour (kMuted.withAlpha (a)); g.drawText ("(" + pmStr() + " semitones)", 430, 112, 130, 12, juce::Justification::centred, false);
+        g.setColour (kText.withAlpha (a));
         g.drawText ("ROOT NOTE:", 430, 152, 130, 14, juce::Justification::centred, false);
         g.drawText ("OCTAVE:", 430, 192, 130, 14, juce::Justification::centred, false);
     }
