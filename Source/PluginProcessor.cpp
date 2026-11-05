@@ -33,8 +33,9 @@ static juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
     flt ("avgSlope", "Average Slope", -6.f, 12.f, 1.f, 0.f);
     flt ("gain", "Display Gain", -30.f, 30.f, 0.5f, 0.f);
     cho ("root", "Root Note", { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" }, 0);
-    l.add (std::make_unique<juce::AudioParameterInt> (ID { "oct", 1 }, "Octave", 1, 7, 4));
-    cho ("width", "Width", { "0.5", "1", "2", "3", "6", "12", "24" }, 1);
+    l.add (std::make_unique<juce::AudioParameterInt> (ID { "oct", 1 }, "Octave", 1, 9, 4));
+    cho ("width", "Width", { "+1", "+3", "+6", "+9", "+12" }, 0);
+    bol ("frameOn", "Frame", true);
     return l;
 }
 
