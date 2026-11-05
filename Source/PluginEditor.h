@@ -23,7 +23,7 @@ private:
     ui::KeyboardView keyboard;
     ui::SettingsPanel settings;
 
-    std::unique_ptr<ui::KnobBox> knIn, knOut, knGain, knBands, knDecay, knSmooth;
+    std::unique_ptr<ui::KnobBox> knIn, knOut, knGain, knRange, knDecay, knTime;
     std::unique_ptr<ui::CycleButton> bRes, bWin, bWidth, bRoot, bOct;
     juce::TextButton bRun1, bRun2, bUp, bDn, bSet;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> runAtt1, runAtt2;
