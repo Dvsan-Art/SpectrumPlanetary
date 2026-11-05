@@ -16,14 +16,14 @@ static juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
     flt ("outGain", "Output", -24.f, 12.f, 0.1f, 0.f);
     bol ("run", "Analyze", true);
     cho ("channel", "Channel", { "Left", "Right", "Both", "Mix" }, 2);
-    cho ("bands", "Bands/Octave", { "3", "4", "6" }, 1);          // por defecto 4 (tu foto)
+    cho ("bands", "Bands/Octave", { "3", "4", "6" }, 0);          // por defecto 3
     cho ("grid", "Freq. Grid", { "Octave", "Decade", "None" }, 0); // por defecto Octave (tu foto)
     cho ("style", "Display", { "Bars", "Curve", "Curve Fill" }, 1);
-    flt ("ceiling", "Ceiling", -80.f, 20.f, 1.f, 3.f);
+    flt ("ceiling", "Ceiling", -80.f, 20.f, 1.f, 5.f);
     flt ("gridDb", "Grid", 2.f, 12.f, 1.f, 5.f);
     flt ("range", "Range", 10.f, 120.f, 1.f, 51.f);
     bol ("peakOn", "Peak On", true);
-    flt ("peakDecay", "Peak Decay", 1.f, 60.f, 0.1f, 12.f);   // tu foto: 12
+    flt ("peakDecay", "Peak Decay", 1.f, 60.f, 0.1f, 15.f);
     bol ("holdOn", "Peak Hold On", false);
     flt ("holdTime", "Hold Time", 100.f, 20000.f, 100.f, 2000.f);
     flt ("holdDecay", "Hold Decay", 1.f, 60.f, 0.1f, 3.f);
@@ -34,7 +34,7 @@ static juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
     flt ("gain", "Display Gain", -30.f, 30.f, 0.5f, 0.f);
     cho ("root", "Root Note", { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" }, 0);
     l.add (std::make_unique<juce::AudioParameterInt> (ID { "oct", 1 }, "Octave", 1, 9, 4));
-    cho ("width", "Width", { "+1", "+3", "+6", "+9", "+12" }, 0);
+    cho ("width", "Width", { "+2", "+4", "+6", "+8", "+10", "+12" }, 0);
     bol ("frameOn", "Frame", true);
     return l;
 }
