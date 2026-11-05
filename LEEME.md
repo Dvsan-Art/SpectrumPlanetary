@@ -1,8 +1,8 @@
-# Spectrum Planetary v1.6
+# Spectrum Planetary v1.7
 
-- Cabecera: FRAME y SET del mismo tamaño, lado a lado.
-- FRAME apagado: oculta el marco en el espectro y el indicador de nota (salvo al pasar el cursor).
-- WIDTH: +2, +4, +6, +8, +10, +12 semitonos.
-- Teclado: C1 a B9 (32,7 Hz a 15,8 kHz), 3 octavas visibles, barra de desplazamiento.
-- SET por defecto: Both, 3 bandas, Octave, Ceiling 5, Grid 5, Range 51, Peak Decay 15.
-- Display (Bars / Curve / Curve Fill) está en el apartado Average.
+- FRAME y SET: mismo tamaño, simétricos, al lado derecho del logo. FRAME viene apagado.
+- FRAME apagado: oculta el marco del espectro, apaga los controles de Frame Adjust y apaga el teclado (lo muestra opaco).
+- Teclado: 9 octavas completas (C1 a B9), sin barra de desplazamiento.
+- SET: tamaño Normal / Grande / Máximo. Ya no se puede arrastrar la esquina.
+- Display fijo en Bars para Peak Hold y Average.
+- Las barras ya no tapan los números de dB.
