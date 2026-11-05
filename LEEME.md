@@ -1,13 +1,10 @@
-# Spectrum Planetary v1.1 (VST3) - 100% C++ (JUCE), sin WebView
+# Spectrum Planetary v1.3 - motor de Seven Phases portado a C++/JUCE
 
-Carpeta:
-    CMakeLists.txt
-    Source/ (PluginProcessor, PluginEditor, SpectrumEngine.h, UiComponents.h)
-    .github/workflows/build.yml
+Motor: Source/FilterBank.h = port escalar (sin SSE) de analyzer.h, sp/coefficients.h y sp/more.h
+del Seven Phases Spectrum Analyzer v1.09 (MIT). Comprobado: 9/9 valores de prueba coinciden con el original (modelo).
 
-Compilar con GitHub: sube todo, pestana Actions, descarga el artefacto.
-Instalar: copia "Spectrum Planetary.vst3" a C:\Program Files\Common Files\VST3
-(borra antes la version anterior).
+Config por defecto = tu foto: Both, 4 bandas/oct, Octave, Ceiling 3, Range 51, Grid 5, Decay 12,
+Peak Hold Off, Average Off.
 
-Uso: clic en LUFS = True Peak / Peak / RMS. Clic en PHASE CORRELATION = vectorscopio semicircular.
-Doble clic en METERS = reiniciar mediciones. Boton SET = ajustes del analizador.
+Subir a GitHub: CMakeLists.txt, Source/ y .github/. Descargar artefacto de Actions.
+Antes de copiar: borrar la version anterior de C:\Program Files\Common Files\VST3.
