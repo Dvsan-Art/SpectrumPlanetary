@@ -9,7 +9,7 @@ namespace ui
 {
 static const juce::Colour kOrange (0xffff9a2e), kText (0xffe2e5ea), kMuted (0xff8e96a3), kLine (0xff2d323b),
                           kPanel (0xff1a1d23), kDeep (0xff0f1216), kBtn (0xff262a32);
-static const double kWidths[] = { 1.0, 3.0, 6.0, 9.0, 12.0 };
+static const double kWidths[] = { 2.0, 4.0, 6.0, 8.0, 10.0, 12.0 };
 static const int kBands[] = { 3, 4, 6 };
 static const char* kNote[] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
 static const char* kSolf[] = { "Do", "Do#", "Re", "Re#", "Mi", "Fa", "Fa#", "Sol", "Sol#", "La", "La#", "Si" };
@@ -259,22 +259,29 @@ public:
 
         // marco de la nota seleccionada (+1, +3, +6, +9, +12 semitonos)
         const int m = currentMidi (A);
-        const double w = kWidths[juce::jlimit (0, 4, (int) pv (A, "width"))];
+        const bool frameOn = pv (A, "frameOn") > 0.5f;
+        const double w = kWidths[juce::jlimit (0, 5, (int) pv (A, "width"))];
         const float x1 = X (midiFreq (m - w)), x2 = X (midiFreq (m + w)), xc = X (midiFreq (m));
-        g.setColour (juce::Colour (0x24beb4a0)); g.fillRect (x1, T, x2 - x1, Ht);
-        g.setColour (kOrange); g.drawRect (x1, T, x2 - x1, Ht, 2.f);
-        g.setColour (kOrange.withAlpha (0.8f));
-        for (float y = T; y < B; y += 8.f) g.fillRect (xc - 0.5f, y, 1.f, 4.f);
+        if (frameOn)
+        {
+            g.setColour (juce::Colour (0x24beb4a0)); g.fillRect (x1, T, x2 - x1, Ht);
+            g.setColour (kOrange); g.drawRect (x1, T, x2 - x1, Ht, 2.f);
+            g.setColour (kOrange.withAlpha (0.8f));
+            for (float y = T; y < B; y += 8.f) g.fillRect (xc - 0.5f, y, 1.f, 4.f);
+        }
 
         // indicador superior derecho: nota | frecuencia (cursor o nota enmarcada)
         const bool inside = hasHov && hov.x > L && hov.x < L + Wd && hov.y > T && hov.y < B && fmin > 0.0;
         const int infoMidi = inside ? midiAt (hov.x, L, Wd, fmin, fmax) : m;
         const juce::String info = noteName (infoMidi) + " | " + juce::String (midiFreq (infoMidi), 2) + " Hz";
+        if (frameOn || inside)
+        {
         setF (g, 12.f, true);
         const float ibw = (float) info.length() * 7.4f + 16.f, ibx = L + Wd - ibw - 4.f;
         g.setColour (juce::Colour (0xe6161820)); g.fillRoundedRectangle (ibx, T + 4.f, ibw, 20.f, 4.f);
         g.setColour (juce::Colour (0xff6a5a44)); g.drawRoundedRectangle (ibx, T + 4.f, ibw, 20.f, 4.f, 1.f);
         g.setColour (kOrange); g.drawText (info, (int) ibx, (int) T + 4, (int) ibw, 20, juce::Justification::centred, false);
+        }
 
         if (inside) { g.setColour (juce::Colours::white.withAlpha (0.45f)); g.drawVerticalLine ((int) hov.x, T, B); }
     }
@@ -300,7 +307,7 @@ public:
     {
         const float W = (float) getWidth(), H = (float) getHeight(), kw = W / 21.f, bw = kw * 0.6f;
         const int root = currentMidi (apvts);
-        const double w = kWidths[juce::jlimit (0, 4, (int) pv (apvts, "width"))];
+        const double w = kWidths[juce::jlimit (0, 5, (int) pv (apvts, "width"))];
         g.fillAll (juce::Colour (0xff0e1013));
         for (int m = start; m < start + span; ++m)
         {
@@ -341,7 +348,7 @@ class KeyScroll : public juce::Component
 public:
     std::function<void (int)> onStart;
     int start = 48;
-    static constexpr int minStart = 24, maxStart = 84, span = 36;
+    static constexpr int minStart = 24, maxStart = 96, span = 36;
 
     void paint (juce::Graphics& g) override
     {
@@ -353,7 +360,7 @@ public:
     void mouseDrag (const juce::MouseEvent& e) override { moveTo (e.position.x); }
 
 private:
-    float thumbW() const { return (float) getWidth() * (float) span / 96.f; }
+    float thumbW() const { return (float) getWidth() * (float) span / 108.f; }
     static float thumbX (int s, float W, float tw) { return (W - tw) * (float) (s - minStart) / (float) (maxStart - minStart); }
     void moveTo (float x)
     {
@@ -591,11 +598,11 @@ public:
             bAtt.push_back (std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (apvts, id, *tb));
             items.push_back ({ col, nullptr, tb.get() }); owned.push_back (std::move (tb));
         };
-        combo (0, "Channel:", "channel"); combo (0, "Bands/Octave:", "bands"); combo (0, "Freq. Grid:", "grid"); combo (0, "Display:", "style");
+        combo (0, "Channel:", "channel"); combo (0, "Bands/Octave:", "bands"); combo (0, "Freq. Grid:", "grid");
         hdr (0, "Level"); slider (0, "Ceiling (dB):", "ceiling", 0); slider (0, "Grid (dB):", "gridDb", 0); slider (0, "Range (dB):", "range", 0);
         hdr (1, "Peak"); slider (1, "Decay (dB/s):", "peakDecay", 1); toggle (1, "On", "peakOn");
         hdr (1, "Peak Hold"); slider (1, "Time (s):", "holdTime", 1); slider (1, "Decay (dB/s):", "holdDecay", 1); toggle (1, "On", "holdOn"); toggle (1, "Infinite", "holdInf");
-        hdr (1, "Average"); slider (1, "Time (s):", "avgTime", 1); slider (1, "Slope (dB/oct):", "avgSlope", 1); toggle (1, "On", "avgOn");
+        hdr (1, "Average"); slider (1, "Time (s):", "avgTime", 1); slider (1, "Slope (dB/oct):", "avgSlope", 1); toggle (1, "On", "avgOn"); combo (1, "Display:", "style");
 
         close.setButtonText ("Close"); close.onClick = [this] { setVisible (false); };
         defaults.setButtonText ("Reset defaults");
