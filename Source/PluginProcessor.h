@@ -44,24 +44,31 @@ public:
                            pkL { -100.f }, pkR { -100.f }, pkMax { -100.f }, rmsL { -100.f }, rmsR { -100.f };
     };
     Meters meters;
-    FilterBankAnalyzer analyzer;
     juce::AudioProcessorValueTreeState apvts;
+    FilterBankAnalyzer analyzer;
 
 private:
     std::array<float, ringSize> ringL {}, ringR {};
     std::atomic<int> writePos { 0 };
     std::atomic<bool> resetRequested { false };
     double sr = 44100.0;
+    std::vector<float> scratchL, scratchR;
+
     std::atomic<float>* inParam = nullptr;
     std::atomic<float>* outParam = nullptr;
     std::atomic<float>* runParam = nullptr;
-    struct ParamPtrs
-    {
-        std::atomic<float> *bands = nullptr, *res = nullptr, *win = nullptr, *channel = nullptr, *integ = nullptr, *decay = nullptr,
-                           *holdTime = nullptr, *holdDecay = nullptr, *avgTime = nullptr, *avgSlope = nullptr, *gain = nullptr,
-                           *peakOn = nullptr, *holdInf = nullptr;
-    } pp;
-    std::vector<float> scratchL, scratchR;
+    std::atomic<float>* chanParam = nullptr;
+    std::atomic<float>* bandsParam = nullptr;
+    std::atomic<float>* peakOnParam = nullptr;
+    std::atomic<float>* peakDecayParam = nullptr;
+    std::atomic<float>* holdOnParam = nullptr;
+    std::atomic<float>* holdTimeParam = nullptr;
+    std::atomic<float>* holdDecayParam = nullptr;
+    std::atomic<float>* holdInfParam = nullptr;
+    std::atomic<float>* avgOnParam = nullptr;
+    std::atomic<float>* avgTimeParam = nullptr;
+    std::atomic<float>* avgSlopeParam = nullptr;
+    std::atomic<float>* gainParam = nullptr;
 
     struct Biquad
     {
