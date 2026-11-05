@@ -13,6 +13,7 @@ public:
 private:
     void timerCallback() override;
     void pickMidi (int midi);
+    void applySize();
 
     SpectrumProcessor& proc;
     ui::PlanetLnF lnf;
@@ -21,7 +22,6 @@ private:
     ui::MeterPanel meters;
     ui::PhasePanel phase;
     ui::KeyboardView keyboard;
-    ui::KeyScroll keyScroll;
     ui::SettingsPanel settings;
 
     std::unique_ptr<ui::KnobBox> knGain, knRange, knDecay, knTime;
@@ -30,6 +30,7 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> frameAtt, runAtt2;
 
     bool lastFrameOn = true;
+    int lastSize = -1;
     double lastMs = 0.0;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SpectrumEditor)
 };
