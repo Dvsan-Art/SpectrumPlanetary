@@ -113,15 +113,15 @@ private:
     {
         const int nb = bandCount;
         const double frameCnt = frameSamples > 0 ? double (frameSamples) : 1.0;
-        const double slope  = 10.0 / nb * p.avgSlope;               // slope por banda
+        const double slope  = 10.0 / nb * p.avgSlope;
         const double outset = 6.0 - 0.5 * nb * slope;
         const int    size   = std::clamp ((int) (p.avgTime / pollMs), 1, ringFrames);
         const double pdec   = p.peakDecay * pollMs * 0.001;
         const double hdec   = p.holdDecay * pollMs * 0.001;
 
-        for (int m = 0; m < nb; ++m)
+        // Calcula todas las bandas 0..nb (nb+1 datos, igual que el original)
+        for (int m = 0; m <= nb; ++m)
         {
-            // Meter (peak / hold), en dB
             const double pv = std::max (-200.0, 20.0 * std::log10 (std::max (peakAcc[m], 1.0e-10)));
             peakM[m] -= pdec;
             if (peakM[m] < pv) peakM[m] = pv;
@@ -129,16 +129,22 @@ private:
             else holdM[m] -= (p.holdInf ? 0.0 : hdec);
             if (holdM[m] < pv) { holdM[m] = pv; holdT[m] = p.holdTime; }
 
-            // Averager: media rectangular de 'size' frames de energia
             ring[m][ringPos] = energyAcc[m] / frameCnt;
             double sum = 0.0;
             for (int k = 0; k < size; ++k) sum += ring[m][(ringPos - k + ringFrames) % ringFrames];
-            const double ms = std::max (sum / size, 1.0e-20);
-            const double avrg = 0.5 * (outset + 20.0 * std::log10 (ms) + slope * m);
+            avrgData[m] = std::max (sum / size, 1.0e-20);
+        }
 
-            bar[m].store ((float) (peakM[m] + p.gain));
-            hold[m].store ((float) (holdM[m] + p.gain));
-            avg[m].store ((float) (avrg + p.gain));
+        // Publicacion: el original lee p.p[i] / p.a[i], que apuntan al dato i+1
+        // (Out::p_ es el elemento 0 y p[] empieza despues). Por eso la barra i muestra la banda i+1,
+        // mientras que la pendiente usa el indice de barra i.
+        for (int i = 0; i < nb; ++i)
+        {
+            const int m = i + 1;
+            const double avrg = 0.5 * (outset + 20.0 * std::log10 (avrgData[m]) + slope * i);
+            bar[i].store ((float) (peakM[m] + p.gain));
+            hold[i].store ((float) (holdM[m] + p.gain));
+            avg[i].store ((float) (avrg + p.gain));
         }
 
         ringPos = (ringPos + 1) % ringFrames;
@@ -217,7 +223,7 @@ private:
     double z0[2][maxFilt] {}, z1[2][maxFilt] {};
     double zPrev[2] {};
     double peakAcc[maxFilt] {}, energyAcc[maxFilt] {};
-    double peakM[maxFilt] {}, holdM[maxFilt] {}, holdT[maxFilt] {};
+    double peakM[maxFilt] {}, holdM[maxFilt] {}, holdT[maxFilt] {}, avrgData[maxFilt] {};
     double ring[maxFilt][ringFrames] {};
     int    ringPos = 0, pollCounter = 0, frameSamples = 0;
     int    bandCount = 0, curBands = -1;
