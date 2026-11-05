@@ -1,177 +1,225 @@
 #pragma once
+// Port escalar (sin SSE) de Seven Phases Spectrum Analyzer v1.09 (analyzer.h, sp/coefficients.h, sp/more.h).
+// Licencia original: MIT (c) Seven Phases. Mismas ecuaciones y constantes.
 #include <algorithm>
-#include <array>
 #include <atomic>
 #include <cmath>
-#include <complex>
 #include <vector>
 
-// Analizador por BANCO DE FILTROS (sin FFT): cada banda es un pasa-banda Butterworth de
-// 1/N de octava (-3 dB en los bordes), con detector RMS/Pico, caida de picos, Peak Hold y promedio.
-// Se ejecuta en el hilo de audio; la interfaz solo lee los resultados.
 class FilterBankAnalyzer
 {
 public:
-    static constexpr int maxBands = 130;
-    static constexpr int maxSecs = 4;
+    static constexpr int maxBands   = 64;
+    static constexpr int maxFilt    = maxBands + 1;
+    static constexpr int ringFrames = 512;
+    static constexpr double pollMs  = 48.0;   // pollTime del original
 
     struct Params
     {
-        int bands = 4, order = 3, channel = 0, detector = 0;
-        float integMs = 120.f, decay = 12.f, holdTime = 2.f, holdDecay = 3.f, avgTime = 3.f, avgSlope = 0.f, gain = 0.f;
-        bool peakOn = true, holdInf = false;
+        int   bands = 4;            // 3, 4 o 6 bandas por octava
+        int   channel = 2;          // 0 Left, 1 Right, 2 Both, 3 Mix
+        float peakDecay = 12.f;     // dB/s
+        float holdTime = 2000.f;    // ms
+        float holdDecay = 3.f;      // dB/s
+        float avgTime = 3000.f;     // ms
+        float avgSlope = 0.f;       // dB/oct
+        float gain = 0.f;           // ganancia de visualizacion (extra)
+        bool  peakOn = true, holdOn = false, holdInf = false, avgOn = false;
     };
 
-    std::atomic<int> numBands { 0 };
+    std::atomic<int>   numBands { 0 };
+    std::atomic<float> freqMinA { 0.f }, freqMaxA { 0.f };
     float fc[maxBands] {}, lo[maxBands] {}, hi[maxBands] {};
-    std::atomic<float> bar[maxBands], hold[maxBands], avg[maxBands];
+    std::atomic<float> bar[maxBands], hold[maxBands], avg[maxBands];   // dB, listos para dibujar
 
-    FilterBankAnalyzer() { clearLevels(); }
-
-    void prepare (double sr, int maxBlock)
+    FilterBankAnalyzer()
     {
-        sampleRate = sr; curBands = -1; curOrder = -1;
-        mid.assign ((size_t) maxBlock, 0.f); side.assign ((size_t) maxBlock, 0.f);
+        for (int i = 0; i < maxBands; ++i) { bar[i].store (-200.f); hold[i].store (-200.f); avg[i].store (-200.f); }
     }
+
+    void prepare (double sr, int) { sampleRate = sr; curBands = -1; reset(); }
 
     void reset()
     {
-        for (auto& b : bank) for (auto& s : b.sec) { s.z1[0] = s.z1[1] = s.z2[0] = s.z2[1] = 0.0; }
-        for (int i = 0; i < maxBands; ++i) { ps[i] = pa[i] = 0.0; holdT[i] = 0.f; }
-        clearLevels();
+        for (int c = 0; c < 2; ++c)
+        {
+            zPrev[c] = 0.0;
+            for (int m = 0; m < maxFilt; ++m) { z0[c][m] = z1[c][m] = 0.0; }
+        }
+        for (int m = 0; m < maxFilt; ++m)
+        {
+            peakAcc[m] = energyAcc[m] = 0.0;
+            peakM[m] = holdM[m] = -200.0;
+            holdT[m] = 0.0;
+            for (int r = 0; r < ringFrames; ++r) ring[m][r] = 0.0;
+        }
+        for (int i = 0; i < maxBands; ++i) { bar[i].store (-200.f); hold[i].store (-200.f); avg[i].store (-200.f); }
+        pollCounter = 0; frameSamples = 0; ringPos = 0;
     }
 
     void process (const float* L, const float* R, int n, const Params& p)
     {
         if (sampleRate <= 0.0 || n <= 0) return;
-        if (p.bands != curBands || p.order != curOrder) rebuild (p.bands, p.order);
-        if ((int) mid.size() < n) { mid.resize ((size_t) n); side.resize ((size_t) n); }
+        if (p.bands != curBands || sampleRate != curFs) rebuild (p.bands);
+        if (bandCount <= 0) return;
 
-        const float* a = L; const float* b2 = nullptr;
-        if (p.channel == 0) b2 = R;
-        else if (p.channel == 2) a = R;
-        else if (p.channel >= 3)
+        for (int i = 0; i < n; ++i)
         {
-            for (int i = 0; i < n; ++i) { mid[(size_t) i] = 0.5f * (L[i] + R[i]); side[(size_t) i] = 0.5f * (L[i] - R[i]); }
-            a = p.channel == 3 ? mid.data() : side.data();
+            if (p.channel == 2)      { sample (0, L[i]); sample (1, R[i]); }
+            else if (p.channel == 0) { sample (0, L[i]); }
+            else if (p.channel == 1) { sample (0, R[i]); }
+            else                     { sample (0, 0.5f * (L[i] + R[i])); }   // Mix
         }
+        frameSamples += (p.channel == 2 ? 2 : 1) * n;
+        pollCounter  += n;
 
-        const int nb = numBands.load (std::memory_order_relaxed);
-        const double dt = (double) n / sampleRate;
-        const double integT = std::max (0.003, (double) p.integMs * 0.001);
-        const double aAvg = 1.0 - std::exp (-dt / std::max (0.1, (double) p.avgTime));
-        for (int b = 0; b < nb; ++b)
+        const int pollSamples = std::max (1, (int) std::lround (sampleRate * pollMs * 0.001));
+        if (pollCounter >= pollSamples)
         {
-            double sumA = 0, pkA = 0, sumB = 0, pkB = 0;
-            runBand (b, 0, a, n, sumA, pkA);
-            if (b2 != nullptr) runBand (b, 1, b2, n, sumB, pkB);
-            const double msq = (sumA + sumB) / ((double) n * (b2 != nullptr ? 2.0 : 1.0));
-            const double pk = std::max (pkA, pkB);
-
-            float lvl;
-            if (p.detector == 1) lvl = (float) (20.0 * std::log10 (std::max (pk, 1.0e-7))) + p.gain;
-            else
-            {
-                const double tau = std::max (integT, 1.5 / (double) fc[b]);
-                ps[b] += (1.0 - std::exp (-dt / tau)) * (msq - ps[b]);
-                lvl = (float) (10.0 * std::log10 (ps[b] + 1.0e-15) + 3.0103) + p.gain;
-            }
-            float v = bar[b].load (std::memory_order_relaxed);
-            v = p.peakOn ? std::max (lvl, v - p.decay * (float) dt) : lvl;
-            float h = hold[b].load (std::memory_order_relaxed);
-            if (v > h) { h = v; holdT[b] = 0.f; }
-            else { holdT[b] += (float) dt; if (! p.holdInf && holdT[b] > p.holdTime) h -= p.holdDecay * (float) dt; }
-            pa[b] += aAvg * (msq - pa[b]);
-            bar[b].store (v, std::memory_order_relaxed);
-            hold[b].store (h, std::memory_order_relaxed);
-            avg[b].store ((float) (10.0 * std::log10 (pa[b] + 1.0e-15) + 3.0103) + p.gain
-                          + p.avgSlope * (float) std::log2 ((double) fc[b] / 1000.0), std::memory_order_relaxed);
+            pollCounter -= pollSamples;
+            tick (p);
         }
     }
 
 private:
-    struct Sec { double b0 = 0, a1 = 0, a2 = 0, z1[2] = { 0, 0 }, z2[2] = { 0, 0 }; };
-    struct Band { int ns = 0; Sec sec[maxSecs]; };
-    std::array<Band, maxBands> bank;
-    double ps[maxBands] {}, pa[maxBands] {};
-    float holdT[maxBands] {};
-    std::vector<float> mid, side;
-    double sampleRate = 0.0;
-    int curBands = -1, curOrder = -1;
-
-    void clearLevels() { for (int i = 0; i < maxBands; ++i) { bar[i].store (-150.f); hold[i].store (-150.f); avg[i].store (-150.f); } }
-
-    void runBand (int b, int ch, const float* x, int n, double& sum, double& pk)
+    // ------------------------------------------------------------ muestra a muestra
+    void sample (int c, float x)
     {
-        Band& bd = bank[(size_t) b];
-        double s2 = 0.0, pm = 0.0;
-        for (int i = 0; i < n; ++i)
+        const int nf = bandCount + 1;
+        const double in = double (x) + 1.0e-10;              // anti-denormal del original
+        const double zl = in + zPrev[c];                     // ZeroLP: out = in + z ; z = in
+        zPrev[c] = in;
+
+        double prev = 0.0;
+        for (int m = 0; m < nf; ++m)
         {
-            double v = x[i];
-            for (int k = 0; k < bd.ns; ++k)
-            {
-                Sec& s = bd.sec[k];
-                const double y = s.b0 * v + s.z1[ch];
-                s.z1[ch] = s.z2[ch] - s.a1 * y;
-                s.z2[ch] = -s.b0 * v - s.a2 * y;
-                v = y;
-            }
-            s2 += v * v;
-            const double av = std::abs (v);
-            if (av > pm) pm = av;
+            // TwoPoleLPSAx: out = z0 ; z0 = in*k0 + z0*k1 + z1*k2 ; z1 = out
+            const double o = z0[c][m];
+            z0[c][m] = zl * kc[0][m] + z0[c][m] * kc[1][m] + z1[c][m] * kc[2][m];
+            z1[c][m] = o;
+
+            // banda m = salida filtro m - salida filtro m-1 (interband)
+            const double y  = o - prev;
+            prev = o;
+            const double ye = y * em[m];                     // emphasis (amplitud)
+            const double a  = std::fabs (ye);
+            if (a > peakAcc[m]) peakAcc[m] = a;              // Peak: max
+            energyAcc[m] += ye * ye;                         // Average: suma de cuadrados
         }
-        sum = s2; pk = pm;
     }
 
-    void rebuild (int B, int order)
+    // ------------------------------------------------------------ poll cada 48 ms (Meter + Averager)
+    void tick (const Params& p)
     {
-        curBands = B; curOrder = order;
-        const double nyq = sampleRate * 0.5;
-        const int i0 = (int) std::ceil (B * std::log2 (19.5 / 1000.0)), i1 = (int) std::floor (B * std::log2 (20500.0 / 1000.0));
-        int nb = 0;
-        for (int i = i0; i <= i1 && nb < maxBands; ++i)
+        const int nb = bandCount;
+        const double frameCnt = frameSamples > 0 ? double (frameSamples) : 1.0;
+        const double slope  = 10.0 / nb * p.avgSlope;               // slope por banda
+        const double outset = 6.0 - 0.5 * nb * slope;
+        const int    size   = std::clamp ((int) (p.avgTime / pollMs), 1, ringFrames);
+        const double pdec   = p.peakDecay * pollMs * 0.001;
+        const double hdec   = p.holdDecay * pollMs * 0.001;
+
+        for (int m = 0; m < nb; ++m)
         {
-            const double f = 1000.0 * std::pow (2.0, (double) i / B);
-            const double f1 = f * std::pow (2.0, -0.5 / B), f2 = f * std::pow (2.0, 0.5 / B);
-            if (f2 >= nyq * 0.98) break;
-            fc[nb] = (float) f; lo[nb] = (float) f1; hi[nb] = (float) f2;
-            design (nb, f1, f2, order);
-            ++nb;
+            // Meter (peak / hold), en dB
+            const double pv = std::max (-200.0, 20.0 * std::log10 (std::max (peakAcc[m], 1.0e-10)));
+            peakM[m] -= pdec;
+            if (peakM[m] < pv) peakM[m] = pv;
+            if (holdT[m] > 0.0) holdT[m] -= pollMs;
+            else holdM[m] -= (p.holdInf ? 0.0 : hdec);
+            if (holdM[m] < pv) { holdM[m] = pv; holdT[m] = p.holdTime; }
+
+            // Averager: media rectangular de 'size' frames de energia
+            ring[m][ringPos] = energyAcc[m] / frameCnt;
+            double sum = 0.0;
+            for (int k = 0; k < size; ++k) sum += ring[m][(ringPos - k + ringFrames) % ringFrames];
+            const double ms = std::max (sum / size, 1.0e-20);
+            const double avrg = 0.5 * (outset + 20.0 * std::log10 (ms) + slope * m);
+
+            bar[m].store ((float) (peakM[m] + p.gain));
+            hold[m].store ((float) (holdM[m] + p.gain));
+            avg[m].store ((float) (avrg + p.gain));
         }
+
+        ringPos = (ringPos + 1) % ringFrames;
+        frameSamples = 0;
+        for (int m = 0; m < maxFilt; ++m) { peakAcc[m] = 0.0; energyAcc[m] = 0.0; }
+        numBands.store (nb);
+    }
+
+    // ------------------------------------------------------------ diseno (Analyzer::update)
+    static double emphasis (int bpo, double f, double fedg)
+    {
+        const double base = 1.025;
+        f = f * (1.0 / fedg);
+        if (bpo == 6) return base + 2.2 * f * f * f - 1.25 * f * f * f * f * f;
+        return base + f * f;
+    }
+
+    // sp::twoPoleLPCoeffs
+    void lpCoeffs (double fs, double f, double q, double prewrap, int n)
+    {
+        const double pi = 3.14159265358979323846;
+        const double w = 2.0 * pi * f / fs;
+        const double y = std::sin (w) / (q * (1.0 + std::cos (w * prewrap)));
+        const double a = 1.0 / (1.0 + y);
+        const double c2 = a * (y - 1.0);
+        const double c1 = a * 2.0 * std::cos (w);
+        const double c0 = (0.5 / q) * (1.0 - c1 - c2);
+        kc[0][n] = c0; kc[1][n] = c1; kc[2][n] = c2;
+    }
+
+    void rebuild (int bpo)
+    {
+        curBands = bpo; curFs = sampleRate;
+        const double fs = sampleRate;
+        const double k  = std::exp (0.69314718055994530942 * (1.0 / bpo));
+        double f = 15.625;
+        const double fmin = 22.0;
+        while (f < fmin) f *= k;
+        const double freqMinV = f;
+
+        const double fanc = 1000.0, fedg = 0.94 * 0.5 * fs;
+        const int    i0   = int (0.5 + std::log (fedg / (fanc * std::sqrt (k))) / std::log (k));
+        const double fli  = 1.0 / (fanc * std::pow (k, i0));
+        const double r    = (1.0 - (fedg / std::sqrt (k)) * fli) * fli * fli;
+        double ferr = 1.0;
+        if (bpo == 3) ferr = .904; else if (bpo == 4) ferr = .905; else if (bpo == 6) ferr = .909;
+
+        double ff = (f / std::sqrt (k)) * (1.0 - r * f * f);
+        int n = 0;
+        double freqMaxV = 0.0;
+        bandCount = 0;
+        for (;;)
+        {
+            lpCoeffs (fs, ff, 2.0 * bpo, ferr, n);
+            em[n]   = emphasis (bpo, ff, fedg);
+            fref[n] = f;
+            ff = f * std::sqrt (k) * (1.0 - r * f * f);
+            if (ff > (fedg + 1.0) || ff > 29000.0) break;
+            if (n + 1 >= maxBands) break;
+            bandCount = ++n;
+            freqMaxV  = f;
+            f *= k;
+        }
+
+        for (int i = 0; i < bandCount; ++i) { fc[i] = (float) fref[i]; lo[i] = hi[i] = fc[i]; }
+        freqMinA.store ((float) freqMinV);
+        freqMaxA.store ((float) freqMaxV);
+        numBands.store (bandCount);
         reset();
-        numBands.store (nb, std::memory_order_release);
     }
 
-    // Pasa-banda Butterworth de orden N (2N polos) por transformacion bilineal, en secciones biquad con ganancia 1 en el centro.
-    void design (int b, double f1, double f2, int N)
-    {
-        const double pi = 3.14159265358979323846, fs = sampleRate, c = 2.0 * fs;
-        const double w1 = c * std::tan (pi * f1 / fs), w2 = c * std::tan (pi * f2 / fs);
-        const double w0 = std::sqrt (w1 * w2), bw = w2 - w1;
-        const double W = 2.0 * std::atan (w0 / c);
-        Band& bd = bank[(size_t) b];
-        bd.ns = 0;
-        for (int k = 0; k < N; ++k)
-        {
-            const double ang = pi * (2.0 * k + N + 1.0) / (2.0 * N);
-            const std::complex<double> p (std::cos (ang), std::sin (ang));
-            if (p.imag() < -1.0e-9) continue;
-            const std::complex<double> pb = p * bw, d = std::sqrt (pb * pb - 4.0 * w0 * w0);
-            const std::complex<double> q[2] = { (pb + d) * 0.5, (pb - d) * 0.5 };
-            const int cnt = std::abs (p.imag()) < 1.0e-9 ? 1 : 2;
-            for (int j = 0; j < cnt && bd.ns < maxSecs; ++j)
-            {
-                const double a0 = std::norm (q[j]), a1 = -2.0 * q[j].real();
-                const double D0 = c * c + a1 * c + a0;
-                Sec s;
-                s.a1 = (-2.0 * c * c + 2.0 * a0) / D0;
-                s.a2 = (c * c - a1 * c + a0) / D0;
-                const double b0 = c / D0;
-                const std::complex<double> z1 = std::polar (1.0, -W), z2 = std::polar (1.0, -2.0 * W);
-                const std::complex<double> h = (b0 * (1.0 - z2)) / (1.0 + s.a1 * z1 + s.a2 * z2);
-                s.b0 = b0 / std::abs (h);
-                bd.sec[bd.ns++] = s;
-            }
-        }
-    }
+    // ------------------------------------------------------------ miembros
+    double kc[3][maxFilt] {};
+    double em[maxFilt] {};
+    double fref[maxFilt] {};
+    double z0[2][maxFilt] {}, z1[2][maxFilt] {};
+    double zPrev[2] {};
+    double peakAcc[maxFilt] {}, energyAcc[maxFilt] {};
+    double peakM[maxFilt] {}, holdM[maxFilt] {}, holdT[maxFilt] {};
+    double ring[maxFilt][ringFrames] {};
+    int    ringPos = 0, pollCounter = 0, frameSamples = 0;
+    int    bandCount = 0, curBands = -1;
+    double sampleRate = 0.0, curFs = 0.0;
 };
