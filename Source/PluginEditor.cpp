@@ -14,25 +14,24 @@ SpectrumEditor::SpectrumEditor (SpectrumProcessor& p)
     auto place = [this] (juce::Component& c, int x, int y, int w, int h) { content.addAndMakeVisible (c); c.setBounds (x, y, w, h); };
     auto dbText = [] (double v) { return juce::String ((int) std::lround (v)) + "dB"; };
 
-    knIn  = std::make_unique<KnobBox> (A, "inGain", "", dbText);  place (*knIn, 224, 6, 34, 52);
-    knOut = std::make_unique<KnobBox> (A, "outGain", "", dbText); place (*knOut, 262, 6, 34, 52);
-    bRes  = std::make_unique<CycleButton> (*rp (A, "bands"), 0, 2); place (*bRes, 302, 30, 58, 22);
-    bWin  = std::make_unique<CycleButton> (*rp (A, "grid"), 0, 2);  place (*bWin, 364, 30, 60, 22);
-    bRun1.setButtonText ("Analyze"); bRun1.setClickingTogglesState (true);
-    runAtt1 = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (A, "run", bRun1);
-    place (bRun1, 430, 30, 58, 22);
+    // cabecera: conmutador Frame y SET
+    bFrame.setButtonText ("Frame");
+    bFrame.setClickingTogglesState (true);
+    frameAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (A, "frameOn", bFrame);
+    place (bFrame, 302, 26, 110, 26);
     bSet.setButtonText ("SET");
     bSet.onClick = [this] { settings.setVisible (! settings.isVisible()); settings.toFront (false); };
-    place (bSet, 494, 30, 58, 22);
+    place (bSet, 424, 26, 60, 26);
 
+    // panel lateral (Frame Adjust)
     bUp.setButtonText ("+"); bDn.setButtonText ("-");
     bUp.onClick = [this] { pickMidi (currentMidi (proc.apvts) + 1); };
     bDn.onClick = [this] { pickMidi (currentMidi (proc.apvts) - 1); };
     place (bUp, 436, 88, 56, 22); place (bDn, 498, 88, 56, 22);
-    bWidth = std::make_unique<CycleButton> (*rp (A, "width"), 0, 6, "WIDTH: " + pmStr());
+    bWidth = std::make_unique<CycleButton> (*rp (A, "width"), 0, 4, "WIDTH: ");
     place (*bWidth, 436, 128, 118, 22);
-    bRoot = std::make_unique<CycleButton> (*rp (A, "root"), 0, 11); place (*bRoot, 436, 168, 118, 22);
-    bOct  = std::make_unique<CycleButton> (*rp (A, "oct"), 1, 7);   place (*bOct, 436, 208, 118, 22);
+    bRoot = std::make_unique<CycleButton> (*rp (A, "root"), 0, 11);  place (*bRoot, 436, 168, 118, 22);
+    bOct  = std::make_unique<CycleButton> (*rp (A, "oct"), 1, 9);    place (*bOct, 436, 208, 118, 22);
 
     knGain  = std::make_unique<KnobBox> (A, "gain", "Gain", dbText);
     knRange = std::make_unique<KnobBox> (A, "range", "Range", dbText);
@@ -45,12 +44,16 @@ SpectrumEditor::SpectrumEditor (SpectrumProcessor& p)
     runAtt2 = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (A, "run", bRun2);
     place (bRun2, 436, 364, 118, 20);
 
+    // vistas
     place (spectrum, 10, 68, 410, 316);
     spectrum.onPick = [this] (int m) { pickMidi (m); };
     place (meters, 566, 64, 188, 236);
     place (phase, 566, 304, 188, 158);
-    place (keyboard, 12, 400, 542, 58);
+    place (keyScroll, 12, 398, 542, 8);
+    place (keyboard, 12, 410, 542, 50);
+    keyboard.start = 48; keyScroll.start = 48;
     keyboard.onPick = [this] (int m) { pickMidi (m); };
+    keyScroll.onStart = [this] (int s) { keyboard.start = s; keyboard.repaint(); };
     place (settings, 6, 64, 554, 324);
     settings.setVisible (false);
     content.onReset = [this] { proc.requestReset(); };
@@ -76,16 +79,37 @@ void SpectrumEditor::resized()
 
 void SpectrumEditor::pickMidi (int midi)
 {
-    midi = juce::jlimit (24, 95, midi);
+    midi = juce::jlimit (24, 119, midi);                 // C1 .. B9
     setParam (proc.apvts, "root", (float) (midi % 12));
     setParam (proc.apvts, "oct", (float) (midi / 12 - 1));
+
+    // si la nota queda fuera de la ventana visible, la ventana salta a su octava
+    if (midi < keyboard.start || midi >= keyboard.start + KeyboardView::span)
+    {
+        const int s = juce::jlimit (24, 84, 24 + 12 * ((midi - 24) / 12));
+        keyboard.start = s; keyScroll.start = s;
+        keyboard.repaint(); keyScroll.repaint();
+    }
 }
 
 void SpectrumEditor::timerCallback()
 {
+    const bool on = pv (proc.apvts, "frameOn") > 0.5f;
+    if (on != lastFrameOn)
+    {
+        lastFrameOn = on;
+        const float a = on ? 1.f : 0.35f;
+        bUp.setEnabled (on); bDn.setEnabled (on);
+        bWidth->setEnabled (on); bRoot->setEnabled (on); bOct->setEnabled (on);
+        bUp.setAlpha (a); bDn.setAlpha (a); bWidth->setAlpha (a); bRoot->setAlpha (a); bOct->setAlpha (a);
+        content.frameOn = on;
+        content.repaint();
+    }
+
     const double now = juce::Time::getMillisecondCounterHiRes();
     const double dt = juce::jlimit (0.001, 0.25, (now - lastMs) / 1000.0);
     lastMs = now;
     if (pv (proc.apvts, "run") > 0.5f) { meters.tick (dt); phase.tick(); }
     spectrum.repaint();
+    keyboard.repaint();
 }
