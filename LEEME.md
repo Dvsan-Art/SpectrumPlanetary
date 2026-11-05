@@ -1,17 +1,8 @@
-name: Compilar VST3
-on:
-  push:
-  workflow_dispatch:
-jobs:
-  windows:
-    runs-on: windows-2022
-    steps:
-      - uses: actions/checkout@v4
-      - name: Configurar
-        run: cmake -B build -G "Visual Studio 17 2022" -A x64
-      - name: Compilar
-        run: cmake --build build --config Release
-      - uses: actions/upload-artifact@v4
-        with:
-          name: Spectrum-Planetary-VST3
-          path: build/SpectrumPlanetary_artefacts/Release/VST3/
+# Spectrum Planetary v1.5
+
+- Motor: Seven Phases portado a C++ (FilterBank.h), con la corrección de banda.
+- Teclado: C1 a B9, 3 octavas visibles, barra de desplazamiento debajo.
+- WIDTH: +1, +3, +6, +9, +12 semitonos.
+- Indicador arriba a la derecha: nota | frecuencia (cursor o nota enmarcada).
+- Botón Frame: enciende o apaga los controles de Frame Adjust.
+- Eliminados de la cabecera: Input Trim, Output, Bands/Oct y Freq. Grid (Bands y Grid siguen en SET).
