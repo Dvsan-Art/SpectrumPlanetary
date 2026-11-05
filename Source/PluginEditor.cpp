@@ -15,20 +15,20 @@ SpectrumEditor::SpectrumEditor (SpectrumProcessor& p)
     auto dbText = [] (double v) { return juce::String ((int) std::lround (v)) + "dB"; };
 
     // cabecera: conmutador Frame y SET
-    bFrame.setButtonText ("Frame");
+    bFrame.setButtonText ("FRAME");
     bFrame.setClickingTogglesState (true);
     frameAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (A, "frameOn", bFrame);
     place (bFrame, 302, 26, 110, 26);
     bSet.setButtonText ("SET");
     bSet.onClick = [this] { settings.setVisible (! settings.isVisible()); settings.toFront (false); };
-    place (bSet, 424, 26, 60, 26);
+    place (bSet, 420, 26, 110, 26);
 
     // panel lateral (Frame Adjust)
     bUp.setButtonText ("+"); bDn.setButtonText ("-");
     bUp.onClick = [this] { pickMidi (currentMidi (proc.apvts) + 1); };
     bDn.onClick = [this] { pickMidi (currentMidi (proc.apvts) - 1); };
     place (bUp, 436, 88, 56, 22); place (bDn, 498, 88, 56, 22);
-    bWidth = std::make_unique<CycleButton> (*rp (A, "width"), 0, 4, "WIDTH: ");
+    bWidth = std::make_unique<CycleButton> (*rp (A, "width"), 0, 5, "WIDTH: ");
     place (*bWidth, 436, 128, 118, 22);
     bRoot = std::make_unique<CycleButton> (*rp (A, "root"), 0, 11);  place (*bRoot, 436, 168, 118, 22);
     bOct  = std::make_unique<CycleButton> (*rp (A, "oct"), 1, 9);    place (*bOct, 436, 208, 118, 22);
@@ -79,14 +79,14 @@ void SpectrumEditor::resized()
 
 void SpectrumEditor::pickMidi (int midi)
 {
-    midi = juce::jlimit (24, 119, midi);                 // C1 .. B9
+    midi = juce::jlimit (24, 131, midi);                 // C1 .. B9 (16 kHz)
     setParam (proc.apvts, "root", (float) (midi % 12));
     setParam (proc.apvts, "oct", (float) (midi / 12 - 1));
 
     // si la nota queda fuera de la ventana visible, la ventana salta a su octava
     if (midi < keyboard.start || midi >= keyboard.start + KeyboardView::span)
     {
-        const int s = juce::jlimit (24, 84, 24 + 12 * ((midi - 24) / 12));
+        const int s = juce::jlimit (24, 96, 24 + 12 * ((midi - 24) / 12));
         keyboard.start = s; keyScroll.start = s;
         keyboard.repaint(); keyScroll.repaint();
     }
