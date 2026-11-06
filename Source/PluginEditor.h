@@ -13,7 +13,6 @@ public:
 private:
     void timerCallback() override;
     void pickMidi (int midi);
-    void applySize();
 
     SpectrumProcessor& proc;
     ui::PlanetLnF lnf;
