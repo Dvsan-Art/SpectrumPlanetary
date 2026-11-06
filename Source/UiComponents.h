@@ -319,7 +319,6 @@ public:
             else if (frameOn && std::abs ((double) (m - root)) <= w) c = juce::Colour (0xffffc98a);
             g.setColour (c); g.fillRect (x, 0.f, kw, H);
             g.setColour (juce::Colour (0xff222222)); g.drawRect (x, 0.f, kw, H, 1.f);
-            if (m % 12 == 0) { g.setColour (juce::Colour (0xff444444)); setF (g, 8.5f); g.drawText ("C" + juce::String (m / 12 - 1), (int) x + 1, (int) H - 14, 24, 12, juce::Justification::left, false); }
         }
         for (int m = first; m <= last; ++m)
         {
@@ -433,22 +432,54 @@ private:
     float holdTp = -100.f;
 };
 
+// ---------------------------------------------------------------- boton redondo de escucha (conmutador exclusivo)
+class MonitorKnob : public juce::Component
+{
+public:
+    explicit MonitorKnob (juce::String t) : text (std::move (t)) {}
+    std::function<void()> onClick;
+    void setActive (bool a) { if (a != active) { active = a; repaint(); } }
+    void mouseDown (const juce::MouseEvent&) override { if (onClick) onClick(); }
+
+    void paint (juce::Graphics& g) override
+    {
+        const float d = 30.f, cx = (float) getWidth() * 0.5f, cy = 22.f;
+        const juce::Rectangle<float> r (cx - d * 0.5f, cy - d * 0.5f, d, d);
+        if (active)
+        {
+            g.setColour (juce::Colour (0x59ffc15e)); g.fillEllipse (r.expanded (4.f));
+            juce::ColourGradient gr (juce::Colour (0xffffe08a), r.getX(), r.getY(), juce::Colour (0xffc7741a), r.getRight(), r.getBottom(), true);
+            g.setGradientFill (gr); g.fillEllipse (r);
+        }
+        else
+        {
+            juce::ColourGradient gr (juce::Colour (0xff4a515d), r.getX(), r.getY(), juce::Colour (0xff1a1d23), r.getRight(), r.getBottom(), true);
+            g.setGradientFill (gr); g.fillEllipse (r);
+        }
+        g.setColour (active ? juce::Colour (0xffffc15e) : juce::Colour (0xff3a404a)); g.drawEllipse (r, 1.5f);
+        g.setColour (active ? juce::Colour (0xffffe9b0) : kText); setF (g, 11.f, active);
+        g.drawText (text, 0, (int) (cy + d * 0.5f + 4), getWidth(), 14, juce::Justification::centred, false);
+    }
+private:
+    juce::String text;
+    bool active = false;
+};
+
 // ---------------------------------------------------------------- correlacion de fase / balance L-R / vectorscopio
 class PhasePanel : public juce::Component
 {
 public:
-    explicit PhasePanel (SpectrumProcessor& p) : proc (p) { trail = juce::Image (juce::Image::RGB, 352, 232, true); }
+    explicit PhasePanel (SpectrumProcessor& p) : proc (p) {}
     bool vec = false;
 
     void mouseDown (const juce::MouseEvent& e) override { if (e.getPosition().y < 26) { vec = ! vec; repaint(); } }
 
     void tick (double dt)
     {
-        // suavizado de lectura (120 ms) sobre los valores calculados en el hilo de audio
-        const float k = 1.f - std::exp ((float) (-dt / 0.12));
+        const float k = 1.f - std::exp ((float) (-dt / 0.12));   // suavizado de lectura (120 ms)
         corrD += (proc.corrOut.load() - corrD) * k;
         balD  += (proc.balOut.load() - balD) * k;
-        if (vec) drawTrail();
+        if (vec) { ensureTrail(); drawTrail(); }
         repaint();
     }
 
@@ -461,8 +492,6 @@ public:
 
         const float x0 = 16.f, w = (float) getWidth() - 32.f;
         auto track = [&] (float y) { const juce::Rectangle<float> r (x0, y, w, 14.f); g.setColour (juce::Colour (0xff16191e)); g.fillRoundedRectangle (r, 3.f); g.setColour (kLine); g.drawRoundedRectangle (r, 3.f, 1.f); g.setColour (juce::Colour (0xff3a424d)); g.drawVerticalLine ((int) r.getCentreX(), r.getY(), r.getBottom()); return r; };
-
-        // barra superior: correlacion de fase -1 .. +1
         {
             auto r = track (32.f);
             const float mx = x0 + (juce::jlimit (-1.f, 1.f, corrD) + 1.f) * 0.5f * w;
@@ -472,7 +501,6 @@ public:
             g.drawText ("0", (int) (x0 + w * 0.5f) - 15, 50, 30, 14, juce::Justification::centred, false);
             g.drawText ("+1", (int) (x0 + w) - 30, 50, 30, 14, juce::Justification::right, false);
         }
-        // barra inferior: distribucion espacial L .. C .. R
         {
             auto r = track (76.f);
             const float mx = x0 + (juce::jlimit (-1.f, 1.f, balD) + 1.f) * 0.5f * w;
@@ -485,14 +513,29 @@ public:
     }
 
 private:
+    // geometria del vectorscopio en coordenadas del componente (ocupa todo el recuadro)
+    float geoCx() const { return (float) getWidth() * 0.5f; }
+    float geoCy() const { return (float) getHeight() - 16.f; }
+    float geoR() const { return juce::jmax (10.f, juce::jmin ((float) getWidth() * 0.5f - 14.f, (float) getHeight() - 36.f)); }
+
+    void ensureTrail()
+    {
+        const int w = juce::jmax (8, getWidth()), h = juce::jmax (8, getHeight());
+        if (trail.getWidth() != w || trail.getHeight() != h)
+        {
+            trail = juce::Image (juce::Image::RGB, w, h, true);
+            juce::Graphics g (trail); g.fillAll (kDeep);
+        }
+    }
+
     void drawTrail()
     {
         const float* RL = proc.ringLeft(); const float* RR = proc.ringRight();
         const int w = proc.getWritePos(), mask = SpectrumProcessor::ringSize - 1;
+        const float x0 = geoCx(), y0 = geoCy(), R = geoR();
         juce::Graphics g (trail);
-        g.setColour (juce::Colour (0xff0c0e12).withAlpha (0.28f)); g.fillAll();
+        g.setColour (kDeep.withAlpha (0.28f)); g.fillAll();      // persistencia del trazo
         g.setColour (kOrange.withAlpha (0.6f));
-        const float x0 = 176.f, y0 = 188.f, R = 152.f;
         for (int i = 0; i < 512; ++i)
         {
             const int j = (w - 512 + i) & mask;
@@ -508,19 +551,18 @@ private:
 
     void paintVec (juce::Graphics& g)
     {
-        const float sx = 6.f, sy = 28.f, cx0 = sx + 88.f, cy0 = sy + 94.f, R = 76.f, pi = juce::MathConstants<float>::pi;
-        g.drawImage (trail, juce::Rectangle<float> (sx, sy, 176.f, 116.f));
+        const float pi = juce::MathConstants<float>::pi, cx0 = geoCx(), cy0 = geoCy(), R = geoR();
+        ensureTrail();
+        g.drawImageAt (trail, 0, 0);
         auto pt = [&] (float deg, float r) { const float a = juce::degreesToRadians (deg); return juce::Point<float> (cx0 + r * std::sin (a), cy0 - r * std::cos (a)); };
         for (float a : { -67.5f, -22.5f, 22.5f, 67.5f }) { g.setColour (juce::Colour (0xff1f252c)); g.drawLine (juce::Line<float> (juce::Point<float> (cx0, cy0), pt (a, R)), 1.f); }
         for (float a : { -90.f, -45.f, 0.f, 45.f, 90.f }) { g.setColour (juce::Colour (0xff3a424d)); g.drawLine (juce::Line<float> (juce::Point<float> (cx0, cy0), pt (a, R)), 1.f); }
-        setF (g, 9.f);
-        const float lv[] = { 1.f, 0.5f, 0.25f, 0.0631f }; const char* lt[] = { "0", "-6", "-12", "-24" };
+        const float lv[] = { 1.f, 0.5f, 0.25f, 0.0631f };
         for (int i = 0; i < 4; ++i)
         {
             const float rr = R * std::pow (lv[i], 0.55f);
             juce::Path p; p.addCentredArc (cx0, cy0, rr, rr, 0.f, -pi * 0.5f, pi * 0.5f, true);
             g.setColour (i == 0 ? juce::Colour (0xff6a7482) : juce::Colour (0xff2f3640)); g.strokePath (p, juce::PathStrokeType (i == 0 ? 1.5f : 1.f));
-            if (i > 0) { g.setColour (kMuted); g.drawText (lt[i], (int) cx0 + 3, (int) (cy0 - rr) - 1, 22, 10, juce::Justification::centredLeft, false); }
         }
         for (float a = -90.f; a <= 90.f; a += 7.5f)
         {
@@ -528,11 +570,7 @@ private:
             g.setColour (juce::Colour (0xff6a7482)); g.drawLine (juce::Line<float> (pt (a, R), pt (a, R + (big ? 5.f : 3.f))), 1.f);
         }
         g.setColour (juce::Colour (0xffb8c0cc)); setF (g, 11.f, true);
-        auto txt = [&] (const juce::String& t, juce::Point<float> p) { g.drawText (t, (int) p.x - 20, (int) p.y - 6, 40, 12, juce::Justification::centred, false); };
-        txt ("MONO", pt (0.f, R + 9.f)); txt ("L", pt (-45.f, R + 11.f)); txt ("R", pt (45.f, R + 11.f));
-        txt ("S", juce::Point<float> (cx0 - R - 8.f, cy0 - 2.f)); txt ("S", juce::Point<float> (cx0 + R + 8.f, cy0 - 2.f));
-        g.setColour (kMuted); setF (g, 10.5f);
-        g.drawText ("CORR " + juce::String (corrD >= 0.f ? "+" : "") + juce::String (corrD, 2), 0, (int) cy0 + 6, getWidth(), 14, juce::Justification::centred, false);
+        g.drawText ("MONO", (int) pt (0.f, R + 9.f).x - 20, (int) pt (0.f, R + 9.f).y - 6, 40, 12, juce::Justification::centred, false);
     }
 
     SpectrumProcessor& proc;
@@ -650,12 +688,6 @@ public:
             g.setColour (kLine); g.drawRoundedRectangle ((float) x + 0.5f, (float) y + 0.5f, (float) w - 1.f, (float) h - 1.f, 6.f, 1.f);
         };
         box (6, 6, 554, 52); box (566, 6, 188, 52); box (6, 64, 418, 324); box (430, 64, 130, 324); box (6, 394, 554, 70); box (566, 64, 188, 400);
-        g.setColour (kOrange); g.fillEllipse (21.f, 25.f, 14.f, 14.f);
-        juce::Path ring; ring.addEllipse (-19.f, -5.f, 38.f, 10.f);
-        g.strokePath (ring, juce::PathStrokeType (2.f), juce::AffineTransform::rotation (-0.35f).translated (28.f, 32.f));
-        setF (g, 17.f, true);
-        g.setColour (kOrange); g.drawText ("SPECTRUM", 52, 10, 160, 20, juce::Justification::centredLeft, false);
-        g.setColour (juce::Colour (0xffd3d6dc)); g.drawText ("PLANETARY", 52, 30, 160, 20, juce::Justification::centredLeft, false);
         setF (g, 24.f, true); g.setColour (juce::Colour (0xffc9ccd2));
         g.drawText ("METERS", 566, 6, 188, 52, juce::Justification::centred, false);
         const float a = frameOn ? 1.f : 0.35f;
