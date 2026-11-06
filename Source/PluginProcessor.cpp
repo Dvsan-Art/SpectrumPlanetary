@@ -19,7 +19,7 @@ static juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
     cho ("bands", "Bands/Octave", { "3", "4", "6" }, 0);          // por defecto 3
     cho ("grid", "Freq. Grid", { "Octave", "Decade", "None" }, 0); // por defecto Octave (tu foto)
     cho ("style", "Display", { "Bars", "Curve", "Curve Fill" }, 0);
-    cho ("uiSize", "Size", { "Normal", "Grande", "Máximo" }, 0);
+    cho ("uiSize", "Size", { "100%", "125%", "150%" }, 0);
     flt ("ceiling", "Ceiling", -80.f, 20.f, 1.f, 5.f);
     flt ("gridDb", "Grid", 2.f, 12.f, 1.f, 5.f);
     flt ("range", "Range", 10.f, 120.f, 1.f, 51.f);
@@ -73,6 +73,7 @@ bool SpectrumProcessor::isBusesLayoutSupported (const BusesLayout& l) const
 void SpectrumProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
     sr = sampleRate;
+    corrA = std::exp (-1.0 / (sr * 0.1));
     subLen = (int) (sr * 0.1);
     scratchL.assign ((size_t) juce::jmax (samplesPerBlock, 4096), 0.f);
     scratchR.assign ((size_t) juce::jmax (samplesPerBlock, 4096), 0.f);
@@ -122,6 +123,7 @@ void SpectrumProcessor::setupFilters()
 void SpectrumProcessor::resetState()
 {
     analyzer.reset();
+    sLL = sRR = sLR = 0.0; corrOut = 0.f; balOut = 0.f;
     for (int c = 0; c < 2; ++c) { shelf[c].clear(); hp[c].clear(); }
     eL = eR = 0.0; en = 0; si = 0; filled = 0; subCount = 0;
     subE.fill (0.0); subEL.fill (0.0); subER.fill (0.0);
@@ -225,9 +227,22 @@ void SpectrumProcessor::analyseChunk (const float* L, const float* R, int n)
         const double kl = hp[0].process (shelf[0].process ((double) l));
         const double kr = hp[1].process (shelf[1].process ((double) r));
         eL += kl * kl; eR += kr * kr;
+        sLL = corrA * sLL + (1.0 - corrA) * (double) l * (double) l;
+        sRR = corrA * sRR + (1.0 - corrA) * (double) r * (double) r;
+        sLR = corrA * sLR + (1.0 - corrA) * (double) l * (double) r;
         if (++en >= subLen) endSub();
     }
     writePos.store (w, std::memory_order_release);
+
+    // correlacion de Pearson (sin media) y balance por potencia, ya suavizados en la ventana
+    {
+        const double den = std::sqrt (sLL * sRR);
+        const double c = den > 1.0e-12 ? sLR / den : 0.0;
+        const double sum = sLL + sRR;
+        const double b = sum > 1.0e-12 ? (sRR - sLL) / sum : 0.0;
+        corrOut.store ((float) juce::jlimit (-1.0, 1.0, c));
+        balOut.store ((float) juce::jlimit (-1.0, 1.0, b));
+    }
 
     float tp[2] = { pL, pR };
     for (int c = 0; c < 2; ++c)
