@@ -37,6 +37,7 @@ static juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
     l.add (std::make_unique<juce::AudioParameterInt> (ID { "oct", 1 }, "Octave", 1, 9, 4));
     cho ("width", "Width", { "+2", "+4", "+6", "+8", "+10", "+12" }, 0);
     bol ("frameOn", "Frame", false);
+    cho ("monitor", "Monitor", { "Stereo", "Left", "Right", "Mono", "Diff" }, 0);
     return l;
 }
 
@@ -61,6 +62,7 @@ SpectrumProcessor::SpectrumProcessor()
     avgTimeParam   = apvts.getRawParameterValue ("avgTime");
     avgSlopeParam  = apvts.getRawParameterValue ("avgSlope");
     gainParam      = apvts.getRawParameterValue ("gain");
+    monParam       = apvts.getRawParameterValue ("monitor");
     resetState();
 }
 
@@ -301,6 +303,19 @@ void SpectrumProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
         q.avgSlope  = avgSlopeParam->load();
         q.gain      = gainParam->load();
         analyzer.process (scratchL.data(), scratchR.data(), n, q);
+    }
+    // escucha: Left / Right / Mono / Diff (despues del analisis, el espectro no cambia)
+    const int mon = (int) monParam->load();
+    if (mon != 0 && buffer.getNumChannels() >= 2)
+    {
+        float* Lw = buffer.getWritePointer (0);
+        float* Rw = buffer.getWritePointer (1);
+        for (int i = 0; i < n; ++i)
+        {
+            const float l = Lw[i], r = Rw[i];
+            const float o = mon == 1 ? l : mon == 2 ? r : mon == 3 ? 0.5f * (l + r) : 0.5f * (l - r);
+            Lw[i] = o; Rw[i] = o;
+        }
     }
     buffer.applyGain (juce::Decibels::decibelsToGain (outParam->load()));
 }
