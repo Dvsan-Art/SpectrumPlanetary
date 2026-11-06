@@ -433,7 +433,7 @@ private:
     float holdTp = -100.f;
 };
 
-// ---------------------------------------------------------------- correlacion de fase / vectorscopio semicircular
+// ---------------------------------------------------------------- correlacion de fase / balance L-R / vectorscopio
 class PhasePanel : public juce::Component
 {
 public:
@@ -442,38 +442,13 @@ public:
 
     void mouseDown (const juce::MouseEvent& e) override { if (e.getPosition().y < 26) { vec = ! vec; repaint(); } }
 
-    void tick()
+    void tick (double dt)
     {
-        const float* RL = proc.ringLeft(); const float* RR = proc.ringRight();
-        const int w = proc.getWritePos(), mask = SpectrumProcessor::ringSize - 1;
-        double ll = 0, rr = 0, lr = 0, mm = 0, ss = 0;
-        for (int i = 0; i < 2048; ++i)
-        {
-            const int j = (w - 2048 + i) & mask;
-            const double l = RL[j], r = RR[j];
-            ll += l * l; rr += r * r; lr += l * r; mm += (l + r) * (l + r) / 4.0; ss += (l - r) * (l - r) / 4.0;
-        }
-        const float c = (ll > 1e-9 && rr > 1e-9) ? (float) (lr / std::sqrt (ll * rr)) : 0.f;
-        const float wd = (mm + ss > 1e-12) ? (float) (ss / (mm + ss)) : 0.f;
-        corr += (c - corr) * 0.25f; width += (wd - width) * 0.25f;
-        if (vec)
-        {
-            juce::Graphics g (trail);
-            g.setColour (juce::Colour (0xff0c0e12).withAlpha (0.28f)); g.fillAll();
-            g.setColour (kOrange.withAlpha (0.6f));
-            const float x0 = 176.f, y0 = 188.f, R = 152.f;
-            for (int i = 0; i < 512; ++i)
-            {
-                const int j = (w - 512 + i) & mask;
-                const float l = RL[j], r = RR[j];
-                float X = (r - l) * 0.5f, Y = (l + r) * 0.5f;
-                if (Y < 0.f) { X = -X; Y = -Y; }
-                const float rad = std::hypot (X, Y);
-                if (rad < 1e-4f) continue;
-                const float k = std::pow (std::min (rad, 1.f), 0.55f) / rad;
-                g.fillRect (x0 + X * k * R - 1.f, y0 - Y * k * R - 1.f, 2.f, 2.f);
-            }
-        }
+        // suavizado de lectura (120 ms) sobre los valores calculados en el hilo de audio
+        const float k = 1.f - std::exp ((float) (-dt / 0.12));
+        corrD += (proc.corrOut.load() - corrD) * k;
+        balD  += (proc.balOut.load() - balD) * k;
+        if (vec) drawTrail();
         repaint();
     }
 
@@ -482,26 +457,57 @@ public:
         g.setColour (kDeep); g.fillRoundedRectangle (4.f, 2.f, (float) getWidth() - 8.f, (float) getHeight() - 4.f, 6.f);
         g.setColour (kText); setF (g, 13.f, true);
         g.drawText (vec ? "VECTORSCOPE" : "PHASE CORRELATION", 0, 5, getWidth(), 18, juce::Justification::centred, false);
-        const juce::String cs = (corr >= 0.f ? "+" : "") + juce::String (corr, 1);
-        if (! vec)
+        if (vec) { paintVec (g); return; }
+
+        const float x0 = 16.f, w = (float) getWidth() - 32.f;
+        auto track = [&] (float y) { const juce::Rectangle<float> r (x0, y, w, 14.f); g.setColour (juce::Colour (0xff16191e)); g.fillRoundedRectangle (r, 3.f); g.setColour (kLine); g.drawRoundedRectangle (r, 3.f, 1.f); g.setColour (juce::Colour (0xff3a424d)); g.drawVerticalLine ((int) r.getCentreX(), r.getY(), r.getBottom()); return r; };
+
+        // barra superior: correlacion de fase -1 .. +1
         {
-            g.setColour (corr < 0.f ? juce::Colour (0xffff5a4a) : corr < 0.3f ? juce::Colour (0xffffb24d) : juce::Colour (0xff4cd964));
-            setF (g, 15.f, true); g.drawText (cs, 0, 32, getWidth(), 18, juce::Justification::centred, false);
-            const juce::Rectangle<float> bar (14.f, 62.f, (float) getWidth() - 28.f, 16.f);
-            g.setGradientFill (juce::ColourGradient (juce::Colour (0xff5a2424), bar.getX(), 0.f, juce::Colour (0xff5a2424), bar.getRight(), 0.f, false));
-            g.fillRect (bar);
-            juce::ColourGradient gr (juce::Colour (0xff5a2424), bar.getX(), 0.f, juce::Colour (0xff5a2424), bar.getRight(), 0.f, false);
-            gr.addColour (0.5, juce::Colour (0xff1f6a35)); g.setGradientFill (gr); g.fillRect (bar);
-            g.setColour (kLine); g.drawRect (bar, 1.f);
-            const float nx = bar.getX() + (corr + 1.f) * 0.5f * bar.getWidth();
-            g.setColour (juce::Colours::white); g.fillRect (nx - 1.5f, bar.getY() - 4.f, 3.f, bar.getHeight() + 8.f);
-            g.setColour (kText); setF (g, 11.f);
-            g.drawText ("-1", 10, 84, 30, 14, juce::Justification::centredLeft, false);
-            g.drawText ("+0.0", 0, 84, getWidth(), 14, juce::Justification::centred, false);
-            g.drawText ("+1", getWidth() - 40, 84, 30, 14, juce::Justification::centredRight, false);
-            g.setColour (kMuted); g.drawText ("Width " + juce::String ((int) std::lround (width * 100.f)) + "%", 0, 112, getWidth(), 14, juce::Justification::centred, false);
-            return;
+            auto r = track (32.f);
+            const float mx = x0 + (juce::jlimit (-1.f, 1.f, corrD) + 1.f) * 0.5f * w;
+            g.setColour (kOrange); g.fillRect (mx - 3.f, r.getY() - 3.f, 6.f, r.getHeight() + 6.f);
+            g.setColour (kMuted); setF (g, 11.f);
+            g.drawText ("-1", (int) x0, 50, 30, 14, juce::Justification::left, false);
+            g.drawText ("0", (int) (x0 + w * 0.5f) - 15, 50, 30, 14, juce::Justification::centred, false);
+            g.drawText ("+1", (int) (x0 + w) - 30, 50, 30, 14, juce::Justification::right, false);
         }
+        // barra inferior: distribucion espacial L .. C .. R
+        {
+            auto r = track (76.f);
+            const float mx = x0 + (juce::jlimit (-1.f, 1.f, balD) + 1.f) * 0.5f * w;
+            g.setColour (juce::Colour (0xff2a9fd6)); g.fillRect (mx - 3.f, r.getY() - 3.f, 6.f, r.getHeight() + 6.f);
+            g.setColour (kMuted); setF (g, 11.f);
+            g.drawText ("L", (int) x0, 94, 30, 14, juce::Justification::left, false);
+            g.drawText ("C", (int) (x0 + w * 0.5f) - 15, 94, 30, 14, juce::Justification::centred, false);
+            g.drawText ("R", (int) (x0 + w) - 30, 94, 30, 14, juce::Justification::right, false);
+        }
+    }
+
+private:
+    void drawTrail()
+    {
+        const float* RL = proc.ringLeft(); const float* RR = proc.ringRight();
+        const int w = proc.getWritePos(), mask = SpectrumProcessor::ringSize - 1;
+        juce::Graphics g (trail);
+        g.setColour (juce::Colour (0xff0c0e12).withAlpha (0.28f)); g.fillAll();
+        g.setColour (kOrange.withAlpha (0.6f));
+        const float x0 = 176.f, y0 = 188.f, R = 152.f;
+        for (int i = 0; i < 512; ++i)
+        {
+            const int j = (w - 512 + i) & mask;
+            const float l = RL[j], r = RR[j];
+            float X = (r - l) * 0.5f, Y = (l + r) * 0.5f;
+            if (Y < 0.f) { X = -X; Y = -Y; }
+            const float rad = std::hypot (X, Y);
+            if (rad < 1e-4f) continue;
+            const float k = std::pow (std::min (rad, 1.f), 0.55f) / rad;
+            g.fillRect (x0 + X * k * R - 1.f, y0 - Y * k * R - 1.f, 2.f, 2.f);
+        }
+    }
+
+    void paintVec (juce::Graphics& g)
+    {
         const float sx = 6.f, sy = 28.f, cx0 = sx + 88.f, cy0 = sy + 94.f, R = 76.f, pi = juce::MathConstants<float>::pi;
         g.drawImage (trail, juce::Rectangle<float> (sx, sy, 176.f, 116.f));
         auto pt = [&] (float deg, float r) { const float a = juce::degreesToRadians (deg); return juce::Point<float> (cx0 + r * std::sin (a), cy0 - r * std::cos (a)); };
@@ -526,12 +532,12 @@ public:
         txt ("MONO", pt (0.f, R + 9.f)); txt ("L", pt (-45.f, R + 11.f)); txt ("R", pt (45.f, R + 11.f));
         txt ("S", juce::Point<float> (cx0 - R - 8.f, cy0 - 2.f)); txt ("S", juce::Point<float> (cx0 + R + 8.f, cy0 - 2.f));
         g.setColour (kMuted); setF (g, 10.5f);
-        g.drawText ("CORR " + cs + "   WIDTH " + juce::String ((int) std::lround (width * 100.f)) + "%", 0, (int) cy0 + 6, getWidth(), 14, juce::Justification::centred, false);
+        g.drawText ("CORR " + juce::String (corrD >= 0.f ? "+" : "") + juce::String (corrD, 2), 0, (int) cy0 + 6, getWidth(), 14, juce::Justification::centred, false);
     }
-private:
+
     SpectrumProcessor& proc;
     juce::Image trail;
-    float corr = 0.f, width = 0.f;
+    float corrD = 0.f, balD = 0.f;
 };
 
 // ---------------------------------------------------------------- ventana de ajustes (como "Spectrum Analyzer Settings")
