@@ -71,6 +71,7 @@ private:
     std::atomic<float>* avgTimeParam = nullptr;
     std::atomic<float>* avgSlopeParam = nullptr;
     std::atomic<float>* gainParam = nullptr;
+    std::atomic<float>* monParam = nullptr;
 
     struct Biquad
     {
