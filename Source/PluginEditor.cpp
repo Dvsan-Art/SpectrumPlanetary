@@ -12,7 +12,6 @@ SpectrumEditor::SpectrumEditor (SpectrumProcessor& p)
     addAndMakeVisible (content);
 
     auto place = [this] (juce::Component& c, int x, int y, int w, int h) { content.addAndMakeVisible (c); c.setBounds (x, y, w, h); };
-    auto dbText = [] (double v) { return juce::String ((int) std::lround (v)) + "dB"; };
 
     // cabecera: FRAME y SET, mismo tamano, centrados verticalmente en la cabecera
     bFrame.setButtonText ("FRAME");
@@ -33,12 +32,12 @@ SpectrumEditor::SpectrumEditor (SpectrumProcessor& p)
     bRoot = std::make_unique<CycleButton> (*rp (A, "root"), 0, 11);  place (*bRoot, 436, 168, 118, 22);
     bOct  = std::make_unique<CycleButton> (*rp (A, "oct"), 1, 9);    place (*bOct, 436, 208, 118, 22);
 
-    knGain  = std::make_unique<KnobBox> (A, "gain", "Gain", dbText);
-    knRange = std::make_unique<KnobBox> (A, "range", "Range", dbText);
-    knDecay = std::make_unique<KnobBox> (A, "peakDecay", "Decay", [] (double v) { return juce::String (v, 0) + "dB/s"; });
-    knTime  = std::make_unique<KnobBox> (A, "avgTime", "Time", [] (double v) { return juce::String (v / 1000.0, 1) + "s"; });
-    place (*knGain, 433, 236, 62, 62);  place (*knRange, 495, 236, 62, 62);
-    place (*knDecay, 433, 300, 62, 62); place (*knTime, 495, 300, 62, 62);
+    place (monL, 433, 236, 62, 62); place (monR, 495, 236, 62, 62);
+    place (monM, 433, 300, 62, 62); place (monD, 495, 300, 62, 62);
+    monL.onClick = [this] { toggleMonitor (1); };
+    monR.onClick = [this] { toggleMonitor (2); };
+    monM.onClick = [this] { toggleMonitor (3); };
+    monD.onClick = [this] { toggleMonitor (4); };
 
     bRun2.setButtonText ("Analyze"); bRun2.setClickingTogglesState (true);
     runAtt2 = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (A, "run", bRun2);
@@ -72,6 +71,13 @@ void SpectrumEditor::resized()
     content.setTransform (juce::AffineTransform::scale ((float) getWidth() / 760.f));
 }
 
+void SpectrumEditor::toggleMonitor (int idx)
+{
+    // exclusivo: si ya esta encendido se apaga (vuelve a Stereo); si no, cambia al elegido
+    const int cur = (int) pv (proc.apvts, "monitor");
+    setParam (proc.apvts, "monitor", (float) (cur == idx ? 0 : idx));
+}
+
 void SpectrumEditor::pickMidi (int midi)
 {
     midi = juce::jlimit (24, 131, midi);     // C1 .. B9
@@ -103,6 +109,9 @@ void SpectrumEditor::timerCallback()
         content.frameOn = on;
         content.repaint();
     }
+
+    const int mon = (int) pv (proc.apvts, "monitor");
+    monL.setActive (mon == 1); monR.setActive (mon == 2); monM.setActive (mon == 3); monD.setActive (mon == 4);
 
     const double now = juce::Time::getMillisecondCounterHiRes();
     const double dt = juce::jlimit (0.001, 0.25, (now - lastMs) / 1000.0);
