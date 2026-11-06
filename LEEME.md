@@ -1,7 +1,7 @@
-# Spectrum Planetary v1.8
+# Spectrum Planetary v1.9
 
-- PHASE CORRELATION: barra superior de correlacion -1 a +1, y barra inferior de balance L / C / R.
-- Correlacion y balance: calculados en el hilo de audio con ventana exponencial de 100 ms; lectura con suavizado de 120 ms.
-- Se quito el texto de Width %.
-- Vectorscopio: igual que antes (clic en el titulo).
-- SET > Size: 100%, 125%, 150% (760x470, 950x588, 1140x705).
+- Teclado sin etiquetas C; C1 a B9 completo.
+- Cuatro botones redondos Left / Right / Mono / Diff (exclusivos, amarillos al encenderse). Procesan la salida:
+  Left y Right dejan solo ese canal; Mono mezcla L+R; Diff saca L-R (lateral). Clic en el encendido = Stereo.
+- Vectorscopio: sin letras L/R/S, sin -6/-12/-24 y sin CORR; ocupa todo el recuadro.
+- Se quito el logo y el texto SPECTRUM PLANETARY de la cabecera.
