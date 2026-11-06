@@ -157,7 +157,7 @@ public:
     void mouseExit (const juce::MouseEvent&) override { hasHov = false; }
     void mouseDown (const juce::MouseEvent& e) override
     {
-        const float L = 30.f, Wd = (float) getWidth() - L - 6.f;
+        const float L = 34.f, Wd = (float) getWidth() - L - 6.f;
         const double fmin = eng.freqMinA.load(), fmax = eng.freqMaxA.load();
         if (onPick == nullptr || fmin <= 0.0 || fmax <= fmin || e.position.x < L) return;
         onPick (midiAt (e.position.x, L, Wd, fmin, fmax));
@@ -179,7 +179,7 @@ public:
     {
         auto& A = apvts;
         const float ceilDb = pv (A, "ceiling"), range = pv (A, "range"), gridDb = pv (A, "gridDb");
-        const float L = 30.f, T = 6.f, Wd = (float) getWidth() - L - 6.f, Ht = (float) getHeight() - T - 20.f, B = T + Ht;
+        const float L = 34.f, T = 6.f, Wd = (float) getWidth() - L - 6.f, Ht = (float) getHeight() - T - 20.f, B = T + Ht;
         const double fmin = eng.freqMinA.load(), fmax = eng.freqMaxA.load();
         const int nb = juce::jlimit (0, FilterBankAnalyzer::maxBands, eng.numBands.load());
         auto X = [=] (double f) { return xOf (f, L, Wd, fmin, fmax); };
@@ -225,9 +225,6 @@ public:
         const float spacing = nb > 1 ? Wd / (float) (nb - 1) : Wd;
         const float bw = juce::jmax (1.f, spacing * 0.8f);
 
-        {
-            juce::Graphics::ScopedSaveState ss (g);
-            g.reduceClipRegion (juce::Rectangle<int> ((int) L, (int) T, (int) Wd + 1, (int) Ht + 1));
         if (showPk && nb > 0)
         {
             juce::ColourGradient grad (juce::Colour (0xffffc15e), 0.f, T, juce::Colour (0xffb8600a), 0.f, B, false);
@@ -259,7 +256,6 @@ public:
         };
         if (pv (A, "avgOn") > 0.5f) line (avgs, juce::Colour (0xe6ffe27a), 3.f);
         if (pv (A, "holdOn") > 0.5f) line (holds, juce::Colour (0xe6e8f0ff), 2.f);
-        }
 
         // marco de la nota seleccionada (+1, +3, +6, +9, +12 semitonos)
         const int m = currentMidi (A);
@@ -296,67 +292,340 @@ private:
     bool hasHov = false;
 };
 
-// ---------------------------------------------------------------- teclado: 9 octavas (C1-B9)
+// ---------------------------------------------------------------- teclado completo C1..B9
 class KeyboardView : public juce::Component
 {
 public:
     explicit KeyboardView (juce::AudioProcessorValueTreeState& a) : apvts (a) {}
     std::function<void (int)> onPick;
-    static constexpr int first = 24, last = 131, whiteCount = 63;
+    static constexpr int first = 24, last = 131;   // C1 .. B9 (32,7 Hz .. 15,8 kHz)
 
     static bool isBlack (int m) { const int n = m % 12; return n == 1 || n == 3 || n == 6 || n == 8 || n == 10; }
+    static int whiteCount() { int c = 0; for (int m = first; m <= last; ++m) if (! isBlack (m)) ++c; return c; }
 
     void paint (juce::Graphics& g) override
     {
-        const float W = (float) getWidth(), H = (float) getHeight(), kw = W / (float) whiteCount, bw = kw * 0.62f;
-        const bool on = pv (apvts, "frameOn") > 0.5f;
+        const float W = (float) getWidth(), H = (float) getHeight(), kw = W / (float) whiteCount(), bw = kw * 0.62f;
+        const bool frameOn = pv (apvts, "frameOn") > 0.5f;
         const int root = currentMidi (apvts);
         const double w = kWidths[juce::jlimit (0, 5, (int) pv (apvts, "width"))];
         g.fillAll (juce::Colour (0xff0e1013));
-
         for (int m = first; m <= last; ++m)
         {
             if (isBlack (m)) continue;
-            const float x = (float) whitesBefore (m) * kw;
-            const bool hl = on && std::abs ((double) (m - root)) <= w;
+            const float x = whitesBefore (m) * kw;
             juce::Colour c (0xffe8e8e8);
-            if (on && m == root) c = kOrange;
-            else if (hl) c = juce::Colour (0xffffc98a);
+            if (frameOn && m == root) c = kOrange;
+            else if (frameOn && std::abs ((double) (m - root)) <= w) c = juce::Colour (0xffffc98a);
             g.setColour (c); g.fillRect (x, 0.f, kw, H);
             g.setColour (juce::Colour (0xff222222)); g.drawRect (x, 0.f, kw, H, 1.f);
-            if (m % 12 == 0)
-            {
-                g.setColour (juce::Colour (0xff444444)); setF (g, 8.5f);
-                g.drawText ("C" + juce::String (m / 12 - 1), (int) x - 6, (int) H - 14, (int) kw + 12, 12, juce::Justification::centred, false);
-            }
+            if (m % 12 == 0) { g.setColour (juce::Colour (0xff444444)); setF (g, 8.5f); g.drawText ("C" + juce::String (m / 12 - 1), (int) x + 1, (int) H - 14, 24, 12, juce::Justification::left, false); }
         }
         for (int m = first; m <= last; ++m)
         {
             if (! isBlack (m)) continue;
-            const float cx = (float) whitesBefore (m) * kw;
-            const bool hl = on && std::abs ((double) (m - root)) <= w;
+            const float cx = whitesBefore (m) * kw;
             juce::Colour c (0xff111111);
-            if (on && m == root) c = juce::Colour (0xffd97a14);
-            else if (hl) c = juce::Colour (0xff9a5a1a);
+            if (frameOn && m == root) c = juce::Colour (0xffd97a14);
+            else if (frameOn && std::abs ((double) (m - root)) <= w) c = juce::Colour (0xff9a5a1a);
             g.setColour (c); g.fillRect (cx - bw * 0.5f, 0.f, bw, H * 0.62f);
         }
-        if (! on) { g.setColour (juce::Colour (0xff0e1013).withAlpha (0.65f)); g.fillAll(); }
     }
 
     void mouseDown (const juce::MouseEvent& e) override
     {
-        const float kw = (float) getWidth() / (float) whiteCount, bw = kw * 0.62f;
+        const float kw = (float) getWidth() / (float) whiteCount(), bw = kw * 0.62f;
         for (int m = first; m <= last; ++m)
-            if (isBlack (m) && juce::Rectangle<float> ((float) whitesBefore (m) * kw - bw * 0.5f, 0.f, bw, (float) getHeight() * 0.62f).contains (e.position))
+            if (isBlack (m) && juce::Rectangle<float> (whitesBefore (m) * kw - bw * 0.5f, 0.f, bw, (float) getHeight() * 0.62f).contains (e.position))
             { if (onPick) onPick (m); return; }
         for (int m = first; m <= last; ++m)
-            if (! isBlack (m) && juce::Rectangle<float> ((float) whitesBefore (m) * kw, 0.f, kw, (float) getHeight()).contains (e.position))
+            if (! isBlack (m) && juce::Rectangle<float> (whitesBefore (m) * kw, 0.f, kw, (float) getHeight()).contains (e.position))
             { if (onPick) onPick (m); return; }
     }
 
 private:
     juce::AudioProcessorValueTreeState& apvts;
     int whitesBefore (int m) const { int c = 0; for (int i = first; i < m; ++i) if (! isBlack (i)) ++c; return c; }
+};
+
+// ---------------------------------------------------------------- panel LUFS / True Peak / Peak / RMS
+class MeterPanel : public juce::Component
+{
+public:
+    explicit MeterPanel (SpectrumProcessor& p) : proc (p) { bv.fill (-100.f); mk.fill (-100.f); vals.fill (-100.f); }
+    int mode = 0;
+
+    void mouseDown (const juce::MouseEvent& e) override
+    {
+        auto pt = e.getPosition();
+        if (pt.y < 26 || (pt.y > 206 && pt.y < 232)) { mode = (mode + 1) % 4; repaint(); }
+    }
+
+    void tick (double dt)
+    {
+        auto& m = proc.meters;
+        const float mom = m.mom.load(), sh = m.sh.load(), integ = m.integ.load(), mL = m.mL.load(), mR = m.mR.load();
+        const float pL = m.pkL.exchange (-100.f), pR = m.pkR.exchange (-100.f), tL = m.tpL.exchange (-100.f), tR = m.tpR.exchange (-100.f);
+        const float rL = m.rmsL.load(), rR = m.rmsR.load(), tpMax = m.tpMax.load(), pkMax = m.pkMax.load();
+        const float fdt = (float) dt;
+        float t0 = 0.f, t1 = 0.f; bool slow = false;
+        if (mode == 0) { vals[0] = mom; vals[1] = sh; vals[2] = integ; t0 = mL; t1 = mR; slow = true; }
+        else if (mode == 1) { holdTp = std::max (std::max (tL, tR), holdTp - 6.f * fdt); vals[0] = std::max (tL, tR); vals[1] = holdTp; vals[2] = tpMax; t0 = tL; t1 = tR; }
+        else if (mode == 2) { vals[0] = pL; vals[1] = pR; vals[2] = pkMax; t0 = pL; t1 = pR; }
+        else { vals[0] = rL; vals[1] = rR; vals[2] = (float) (10.0 * std::log10 ((std::pow (10.0, rL / 10.0) + std::pow (10.0, rR / 10.0)) / 2.0 + 1.0e-12)); t0 = rL; t1 = rR; slow = true; }
+        const float tg[4] = { t0, t1, t0, t1 };
+        for (int i = 0; i < 4; ++i)
+        {
+            const float x = std::max (tg[i], -100.f);
+            if (i < 2) bv[(size_t) i] = x > bv[(size_t) i] ? x : std::max (x, bv[(size_t) i] - 60.f * fdt);
+            else if (slow) bv[(size_t) i] += (x - bv[(size_t) i]) * (1.f - std::exp (-fdt / 1.5f));
+            else bv[(size_t) i] = x > bv[(size_t) i] ? x : std::max (x, bv[(size_t) i] - 6.f * fdt);
+            mk[(size_t) i] = std::max (bv[(size_t) i], mk[(size_t) i] - 8.f * fdt);
+        }
+        repaint();
+    }
+
+    void paint (juce::Graphics& g) override
+    {
+        static const char* titles[] = { "LUFS", "TRUE PEAK", "PEAK", "RMS" };
+        static const char* units[] = { "LUFS", "dBTP", "dBFS", "dBFS" };
+        static const char* heads[4][3] = { { "Momentary", "Short Term", "Integrated" }, { "Actual", "Hold", "Max" }, { "Peak L", "Peak R", "Max" }, { "RMS L", "RMS R", "Average" } };
+        const juce::Colour vc[3] = { juce::Colour (0xffff7a50), juce::Colour (0xffff9a60), juce::Colour (0xff4cd964) };
+
+        g.setColour (kDeep); g.fillRoundedRectangle (4.f, 2.f, (float) getWidth() - 8.f, (float) getHeight() - 4.f, 6.f);
+        g.setColour (kText); setF (g, 15.f, true);
+        g.drawText (titles[mode], 0, 4, getWidth(), 20, juce::Justification::centred, false);
+        for (int i = 0; i < 3; ++i)
+        {
+            g.setColour (kText); setF (g, 9.5f);
+            g.drawText (heads[mode][i], 4 + i * 60, 28, 60, 12, juce::Justification::centred, false);
+            g.setColour (vc[i]); setF (g, 13.f, true);
+            g.drawText (vals[(size_t) i] <= -99.f ? infStr() : juce::String (vals[(size_t) i], 1), 4 + i * 60, 41, 60, 16, juce::Justification::centred, false);
+        }
+        const float by = 64.f, bh = 140.f;
+        auto bar = [&] (float x, float db, float mark)
+        {
+            g.setColour (juce::Colour (0xff16191e)); g.fillRect (x, by, 17.f, bh);
+            const float p = juce::jlimit (0.f, 1.f, (db + 48.f) / 48.f);
+            {
+                juce::Graphics::ScopedSaveState ss (g);
+                g.reduceClipRegion ((int) x, (int) (by + bh * (1.f - p)), 18, (int) (bh * p) + 1);
+                juce::ColourGradient gr (juce::Colour (0xffe53a1a), 0.f, by, juce::Colour (0xff1e9a43), 0.f, by + bh, false);
+                gr.addColour (0.15, juce::Colour (0xffff8a1f)); gr.addColour (0.35, juce::Colour (0xfff0c93a)); gr.addColour (0.65, juce::Colour (0xff46d066));
+                g.setGradientFill (gr); g.fillRect (x, by, 17.f, bh);
+            }
+            const float pm = juce::jlimit (0.f, 1.f, (mark + 48.f) / 48.f);
+            g.setColour (juce::Colours::white); g.fillRect (x, by + bh * (1.f - pm) - 1.f, 17.f, 2.f);
+        };
+        bar (10.f, bv[0], mk[0]); bar (29.f, bv[1], mk[1]);
+        bar (142.f, bv[2], mk[2]); bar (161.f, bv[3], mk[3]);
+        g.setColour (kMuted); setF (g, 9.5f);
+        for (int i = 0; i < 9; ++i)
+            g.drawText (juce::String (-6 * i), 50, (int) (by + (bh - 12.f) * (float) i / 8.f), 86, 12, juce::Justification::centred, false);
+        g.setColour (kText); setF (g, 13.f, true);
+        g.drawText (units[mode], 8, 210, 60, 18, juce::Justification::centredLeft, false);
+        g.drawText (units[mode], 120, 210, 60, 18, juce::Justification::centredRight, false);
+    }
+private:
+    SpectrumProcessor& proc;
+    std::array<float, 4> bv {}, mk {};
+    std::array<float, 3> vals {};
+    float holdTp = -100.f;
+};
+
+// ---------------------------------------------------------------- correlacion de fase / vectorscopio semicircular
+class PhasePanel : public juce::Component
+{
+public:
+    explicit PhasePanel (SpectrumProcessor& p) : proc (p) { trail = juce::Image (juce::Image::RGB, 352, 232, true); }
+    bool vec = false;
+
+    void mouseDown (const juce::MouseEvent& e) override { if (e.getPosition().y < 26) { vec = ! vec; repaint(); } }
+
+    void tick()
+    {
+        const float* RL = proc.ringLeft(); const float* RR = proc.ringRight();
+        const int w = proc.getWritePos(), mask = SpectrumProcessor::ringSize - 1;
+        double ll = 0, rr = 0, lr = 0, mm = 0, ss = 0;
+        for (int i = 0; i < 2048; ++i)
+        {
+            const int j = (w - 2048 + i) & mask;
+            const double l = RL[j], r = RR[j];
+            ll += l * l; rr += r * r; lr += l * r; mm += (l + r) * (l + r) / 4.0; ss += (l - r) * (l - r) / 4.0;
+        }
+        const float c = (ll > 1e-9 && rr > 1e-9) ? (float) (lr / std::sqrt (ll * rr)) : 0.f;
+        const float wd = (mm + ss > 1e-12) ? (float) (ss / (mm + ss)) : 0.f;
+        corr += (c - corr) * 0.25f; width += (wd - width) * 0.25f;
+        if (vec)
+        {
+            juce::Graphics g (trail);
+            g.setColour (juce::Colour (0xff0c0e12).withAlpha (0.28f)); g.fillAll();
+            g.setColour (kOrange.withAlpha (0.6f));
+            const float x0 = 176.f, y0 = 188.f, R = 152.f;
+            for (int i = 0; i < 512; ++i)
+            {
+                const int j = (w - 512 + i) & mask;
+                const float l = RL[j], r = RR[j];
+                float X = (r - l) * 0.5f, Y = (l + r) * 0.5f;
+                if (Y < 0.f) { X = -X; Y = -Y; }
+                const float rad = std::hypot (X, Y);
+                if (rad < 1e-4f) continue;
+                const float k = std::pow (std::min (rad, 1.f), 0.55f) / rad;
+                g.fillRect (x0 + X * k * R - 1.f, y0 - Y * k * R - 1.f, 2.f, 2.f);
+            }
+        }
+        repaint();
+    }
+
+    void paint (juce::Graphics& g) override
+    {
+        g.setColour (kDeep); g.fillRoundedRectangle (4.f, 2.f, (float) getWidth() - 8.f, (float) getHeight() - 4.f, 6.f);
+        g.setColour (kText); setF (g, 13.f, true);
+        g.drawText (vec ? "VECTORSCOPE" : "PHASE CORRELATION", 0, 5, getWidth(), 18, juce::Justification::centred, false);
+        const juce::String cs = (corr >= 0.f ? "+" : "") + juce::String (corr, 1);
+        if (! vec)
+        {
+            g.setColour (corr < 0.f ? juce::Colour (0xffff5a4a) : corr < 0.3f ? juce::Colour (0xffffb24d) : juce::Colour (0xff4cd964));
+            setF (g, 15.f, true); g.drawText (cs, 0, 32, getWidth(), 18, juce::Justification::centred, false);
+            const juce::Rectangle<float> bar (14.f, 62.f, (float) getWidth() - 28.f, 16.f);
+            g.setGradientFill (juce::ColourGradient (juce::Colour (0xff5a2424), bar.getX(), 0.f, juce::Colour (0xff5a2424), bar.getRight(), 0.f, false));
+            g.fillRect (bar);
+            juce::ColourGradient gr (juce::Colour (0xff5a2424), bar.getX(), 0.f, juce::Colour (0xff5a2424), bar.getRight(), 0.f, false);
+            gr.addColour (0.5, juce::Colour (0xff1f6a35)); g.setGradientFill (gr); g.fillRect (bar);
+            g.setColour (kLine); g.drawRect (bar, 1.f);
+            const float nx = bar.getX() + (corr + 1.f) * 0.5f * bar.getWidth();
+            g.setColour (juce::Colours::white); g.fillRect (nx - 1.5f, bar.getY() - 4.f, 3.f, bar.getHeight() + 8.f);
+            g.setColour (kText); setF (g, 11.f);
+            g.drawText ("-1", 10, 84, 30, 14, juce::Justification::centredLeft, false);
+            g.drawText ("+0.0", 0, 84, getWidth(), 14, juce::Justification::centred, false);
+            g.drawText ("+1", getWidth() - 40, 84, 30, 14, juce::Justification::centredRight, false);
+            g.setColour (kMuted); g.drawText ("Width " + juce::String ((int) std::lround (width * 100.f)) + "%", 0, 112, getWidth(), 14, juce::Justification::centred, false);
+            return;
+        }
+        const float sx = 6.f, sy = 28.f, cx0 = sx + 88.f, cy0 = sy + 94.f, R = 76.f, pi = juce::MathConstants<float>::pi;
+        g.drawImage (trail, juce::Rectangle<float> (sx, sy, 176.f, 116.f));
+        auto pt = [&] (float deg, float r) { const float a = juce::degreesToRadians (deg); return juce::Point<float> (cx0 + r * std::sin (a), cy0 - r * std::cos (a)); };
+        for (float a : { -67.5f, -22.5f, 22.5f, 67.5f }) { g.setColour (juce::Colour (0xff1f252c)); g.drawLine (juce::Line<float> (juce::Point<float> (cx0, cy0), pt (a, R)), 1.f); }
+        for (float a : { -90.f, -45.f, 0.f, 45.f, 90.f }) { g.setColour (juce::Colour (0xff3a424d)); g.drawLine (juce::Line<float> (juce::Point<float> (cx0, cy0), pt (a, R)), 1.f); }
+        setF (g, 9.f);
+        const float lv[] = { 1.f, 0.5f, 0.25f, 0.0631f }; const char* lt[] = { "0", "-6", "-12", "-24" };
+        for (int i = 0; i < 4; ++i)
+        {
+            const float rr = R * std::pow (lv[i], 0.55f);
+            juce::Path p; p.addCentredArc (cx0, cy0, rr, rr, 0.f, -pi * 0.5f, pi * 0.5f, true);
+            g.setColour (i == 0 ? juce::Colour (0xff6a7482) : juce::Colour (0xff2f3640)); g.strokePath (p, juce::PathStrokeType (i == 0 ? 1.5f : 1.f));
+            if (i > 0) { g.setColour (kMuted); g.drawText (lt[i], (int) cx0 + 3, (int) (cy0 - rr) - 1, 22, 10, juce::Justification::centredLeft, false); }
+        }
+        for (float a = -90.f; a <= 90.f; a += 7.5f)
+        {
+            const bool big = std::fmod (std::abs (a), 45.f) < 0.01f;
+            g.setColour (juce::Colour (0xff6a7482)); g.drawLine (juce::Line<float> (pt (a, R), pt (a, R + (big ? 5.f : 3.f))), 1.f);
+        }
+        g.setColour (juce::Colour (0xffb8c0cc)); setF (g, 11.f, true);
+        auto txt = [&] (const juce::String& t, juce::Point<float> p) { g.drawText (t, (int) p.x - 20, (int) p.y - 6, 40, 12, juce::Justification::centred, false); };
+        txt ("MONO", pt (0.f, R + 9.f)); txt ("L", pt (-45.f, R + 11.f)); txt ("R", pt (45.f, R + 11.f));
+        txt ("S", juce::Point<float> (cx0 - R - 8.f, cy0 - 2.f)); txt ("S", juce::Point<float> (cx0 + R + 8.f, cy0 - 2.f));
+        g.setColour (kMuted); setF (g, 10.5f);
+        g.drawText ("CORR " + cs + "   WIDTH " + juce::String ((int) std::lround (width * 100.f)) + "%", 0, (int) cy0 + 6, getWidth(), 14, juce::Justification::centred, false);
+    }
+private:
+    SpectrumProcessor& proc;
+    juce::Image trail;
+    float corr = 0.f, width = 0.f;
+};
+
+// ---------------------------------------------------------------- ventana de ajustes (como "Spectrum Analyzer Settings")
+class SettingsPanel : public juce::Component
+{
+public:
+    explicit SettingsPanel (juce::AudioProcessorValueTreeState& a) : apvts (a)
+    {
+        auto label = [this] (const juce::String& t, bool hdr)
+        {
+            auto l = std::make_unique<juce::Label>();
+            l->setText (t, juce::dontSendNotification);
+            l->setFont (l->getFont().withHeight (hdr ? 14.f : 12.f));
+            if (hdr) { l->setFont (l->getFont().boldened()); l->setColour (juce::Label::textColourId, kOrange); }
+            addAndMakeVisible (*l);
+            auto* raw = l.get(); owned.push_back (std::move (l)); return raw;
+        };
+        auto hdr = [&] (int col, const juce::String& t) { items.push_back ({ col, label (t, true), nullptr }); };
+        auto combo = [&] (int col, const juce::String& t, const char* id)
+        {
+            auto cb = std::make_unique<juce::ComboBox>();
+            cb->addItemList (dynamic_cast<juce::AudioParameterChoice*> (apvts.getParameter (id))->choices, 1);
+            addAndMakeVisible (*cb);
+            cAtt.push_back (std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (apvts, id, *cb));
+            items.push_back ({ col, label (t, false), cb.get() }); owned.push_back (std::move (cb));
+        };
+        auto slider = [&] (int col, const juce::String& t, const char* id, int dec)
+        {
+            auto sl = std::make_unique<juce::Slider> (juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight);
+            sl->setTextBoxStyle (juce::Slider::TextBoxRight, false, 44, 18);
+            sl->setNumDecimalPlacesToDisplay (dec);
+            addAndMakeVisible (*sl);
+            sAtt.push_back (std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (apvts, id, *sl));
+            items.push_back ({ col, label (t, false), sl.get() }); owned.push_back (std::move (sl));
+        };
+        auto toggle = [&] (int col, const juce::String& t, const char* id)
+        {
+            auto tb = std::make_unique<juce::ToggleButton> (t);
+            addAndMakeVisible (*tb);
+            bAtt.push_back (std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (apvts, id, *tb));
+            items.push_back ({ col, nullptr, tb.get() }); owned.push_back (std::move (tb));
+        };
+        combo (0, "Channel:", "channel"); combo (0, "Bands/Octave:", "bands"); combo (0, "Freq. Grid:", "grid"); combo (0, "Size:", "uiSize");
+        hdr (0, "Level"); slider (0, "Ceiling (dB):", "ceiling", 0); slider (0, "Grid (dB):", "gridDb", 0); slider (0, "Range (dB):", "range", 0);
+        hdr (1, "Peak"); slider (1, "Decay (dB/s):", "peakDecay", 1); toggle (1, "On", "peakOn");
+        hdr (1, "Peak Hold"); slider (1, "Time (s):", "holdTime", 1); slider (1, "Decay (dB/s):", "holdDecay", 1); toggle (1, "On", "holdOn"); toggle (1, "Infinite", "holdInf");
+        hdr (1, "Average"); slider (1, "Time (s):", "avgTime", 1); slider (1, "Slope (dB/oct):", "avgSlope", 1); toggle (1, "On", "avgOn");
+
+        close.setButtonText ("Close"); close.onClick = [this] { setVisible (false); };
+        defaults.setButtonText ("Reset defaults");
+        defaults.onClick = [this]
+        {
+            for (auto* p : apvts.processor.getParameters())
+                if (auto* r = dynamic_cast<juce::RangedAudioParameter*> (p))
+                {
+                    const juce::String id = r->paramID;
+                    if (id == "channel" || id == "bands" || id == "grid" || id == "ceiling" || id == "gridDb" || id == "range" || id == "peakDecay" || id == "peakOn"
+                        || id == "holdOn" || id == "holdTime" || id == "holdDecay" || id == "holdInf" || id == "avgOn" || id == "avgTime" || id == "avgSlope")
+                    { r->beginChangeGesture(); r->setValueNotifyingHost (r->getDefaultValue()); r->endChangeGesture(); }
+                }
+        };
+        addAndMakeVisible (close); addAndMakeVisible (defaults);
+    }
+    void paint (juce::Graphics& g) override
+    {
+        g.fillAll (juce::Colour (0xf4161920));
+        g.setColour (kLine); g.drawRect (getLocalBounds(), 1);
+        g.setColour (kText); setF (g, 15.f, true);
+        g.drawText ("Spectrum Analyzer Settings", 14, 8, 300, 20, juce::Justification::centredLeft, false);
+        g.setColour (kLine); g.drawVerticalLine (getWidth() / 2 - 6, 38.f, (float) getHeight() - 40.f);
+    }
+    void resized() override
+    {
+        int y[2] = { 40, 40 };
+        for (auto& it : items)
+        {
+            const int x = it.col == 0 ? 14 : getWidth() / 2 + 6;
+            int& yy = y[it.col];
+            if (it.lab != nullptr && it.ctl == nullptr) { it.lab->setBounds (x, yy, 240, 20); yy += 24; }
+            else if (it.lab != nullptr) { it.lab->setBounds (x, yy, 110, 20); it.ctl->setBounds (x + 112, yy, getWidth() / 2 - 140, 20); yy += 22; }
+            else { it.ctl->setBounds (x + 112, yy, 120, 20); yy += 22; }
+        }
+        close.setBounds (getWidth() - 74, 8, 62, 22);
+        defaults.setBounds (14, getHeight() - 32, 110, 22);
+    }
+private:
+    struct Item { int col; juce::Label* lab; juce::Component* ctl; };
+    juce::AudioProcessorValueTreeState& apvts;
+    std::vector<std::unique_ptr<juce::Component>> owned;
+    std::vector<Item> items;
+    std::vector<std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment>> cAtt;
+    std::vector<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>> sAtt;
+    std::vector<std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment>> bAtt;
+    juce::TextButton close, defaults;
 };
 
 // ---------------------------------------------------------------- fondo y textos fijos
