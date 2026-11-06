@@ -1,8 +1,7 @@
-# Spectrum Planetary v1.7
+# Spectrum Planetary v1.8
 
-- Cabecera: FRAME y SET del mismo tamano, centrados en la cabecera. FRAME viene apagado.
-- FRAME apagado: no muestra el marco en el espectro, no resalta teclas y atenua los controles de Frame Adjust.
-- Teclado: C1 a B9 completo (32,7 Hz a 15,8 kHz), sin barra de desplazamiento.
-- Peak Hold y Average: display Bars por defecto (el selector Display se quito de SET).
-- SET > Size: Normal, Grande o Maximo (proporcion fija). Ya no se redimensiona desde la esquina.
-- Numeros de dB movidos a la izquierda para que la barra no los tape.
+- PHASE CORRELATION: barra superior de correlacion -1 a +1, y barra inferior de balance L / C / R.
+- Correlacion y balance: calculados en el hilo de audio con ventana exponencial de 100 ms; lectura con suavizado de 120 ms.
+- Se quito el texto de Width %.
+- Vectorscopio: igual que antes (clic en el titulo).
+- SET > Size: 100%, 125%, 150% (760x470, 950x588, 1140x705).
