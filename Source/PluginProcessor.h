@@ -46,12 +46,14 @@ public:
     Meters meters;
     juce::AudioProcessorValueTreeState apvts;
     FilterBankAnalyzer analyzer;
+    std::atomic<float> corrOut { 0.f }, balOut { 0.f };   // correlacion -1..+1 y balance L(-1)..R(+1)
 
 private:
     std::array<float, ringSize> ringL {}, ringR {};
     std::atomic<int> writePos { 0 };
     std::atomic<bool> resetRequested { false };
     double sr = 44100.0;
+    double corrA = 0.99, sLL = 0.0, sRR = 0.0, sLR = 0.0;   // ventana exponencial de 100 ms
     std::vector<float> scratchL, scratchR;
 
     std::atomic<float>* inParam = nullptr;
