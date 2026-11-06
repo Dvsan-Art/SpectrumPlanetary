@@ -1,8 +1,8 @@
 # Spectrum Planetary v1.7
 
-- FRAME y SET: mismo tamaño, simétricos, al lado derecho del logo. FRAME viene apagado.
-- FRAME apagado: oculta el marco del espectro, apaga los controles de Frame Adjust y apaga el teclado (lo muestra opaco).
-- Teclado: 9 octavas completas (C1 a B9), sin barra de desplazamiento.
-- SET: tamaño Normal / Grande / Máximo. Ya no se puede arrastrar la esquina.
-- Display fijo en Bars para Peak Hold y Average.
-- Las barras ya no tapan los números de dB.
+- Cabecera: FRAME y SET del mismo tamano, centrados en la cabecera. FRAME viene apagado.
+- FRAME apagado: no muestra el marco en el espectro, no resalta teclas y atenua los controles de Frame Adjust.
+- Teclado: C1 a B9 completo (32,7 Hz a 15,8 kHz), sin barra de desplazamiento.
+- Peak Hold y Average: display Bars por defecto (el selector Display se quito de SET).
+- SET > Size: Normal, Grande o Maximo (proporcion fija). Ya no se redimensiona desde la esquina.
+- Numeros de dB movidos a la izquierda para que la barra no los tape.
