@@ -19,6 +19,7 @@ static juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
     cho ("bands", "Bands/Octave", { "3", "4", "6" }, 0);          // por defecto 3
     cho ("grid", "Freq. Grid", { "Octave", "Decade", "None" }, 0); // por defecto Octave (tu foto)
     cho ("style", "Display", { "Bars", "Curve", "Curve Fill" }, 0);
+    cho ("uiSize", "Size", { "Normal", "Grande", "Máximo" }, 0);
     flt ("ceiling", "Ceiling", -80.f, 20.f, 1.f, 5.f);
     flt ("gridDb", "Grid", 2.f, 12.f, 1.f, 5.f);
     flt ("range", "Range", 10.f, 120.f, 1.f, 51.f);
@@ -36,7 +37,6 @@ static juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
     l.add (std::make_unique<juce::AudioParameterInt> (ID { "oct", 1 }, "Octave", 1, 9, 4));
     cho ("width", "Width", { "+2", "+4", "+6", "+8", "+10", "+12" }, 0);
     bol ("frameOn", "Frame", false);
-    cho ("size", "Size", { "Normal", "Grande", "Máximo" }, 0);
     return l;
 }
 
