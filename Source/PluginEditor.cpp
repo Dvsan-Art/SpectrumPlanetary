@@ -86,8 +86,8 @@ void SpectrumEditor::timerCallback()
     if (sz != lastSize)
     {
         lastSize = sz;
-        static const int W[] = { 760, 1000, 1140 };
-        static const int H[] = { 470, 618, 705 };
+        static const int W[] = { 760, 950, 1140 };
+        static const int H[] = { 470, 588, 705 };
         setSize (W[sz], H[sz]);
     }
 
@@ -107,7 +107,7 @@ void SpectrumEditor::timerCallback()
     const double now = juce::Time::getMillisecondCounterHiRes();
     const double dt = juce::jlimit (0.001, 0.25, (now - lastMs) / 1000.0);
     lastMs = now;
-    if (pv (proc.apvts, "run") > 0.5f) { meters.tick (dt); phase.tick(); }
+    if (pv (proc.apvts, "run") > 0.5f) { meters.tick (dt); phase.tick (dt); }
     spectrum.repaint();
     keyboard.repaint();
 }
