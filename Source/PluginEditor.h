@@ -13,6 +13,7 @@ public:
 private:
     void timerCallback() override;
     void pickMidi (int midi);
+    void toggleMonitor (int idx);
 
     SpectrumProcessor& proc;
     ui::PlanetLnF lnf;
@@ -23,7 +24,7 @@ private:
     ui::KeyboardView keyboard;
     ui::SettingsPanel settings;
 
-    std::unique_ptr<ui::KnobBox> knGain, knRange, knDecay, knTime;
+    ui::MonitorKnob monL { "Left" }, monR { "Right" }, monM { "Mono" }, monD { "Diff" };
     std::unique_ptr<ui::CycleButton> bWidth, bRoot, bOct;
     juce::TextButton bFrame, bSet, bUp, bDn, bRun2;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> frameAtt, runAtt2;
