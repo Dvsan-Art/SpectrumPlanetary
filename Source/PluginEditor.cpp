@@ -17,10 +17,10 @@ SpectrumEditor::SpectrumEditor (SpectrumProcessor& p)
     bFrame.setButtonText ("FRAME");
     bFrame.setClickingTogglesState (true);
     frameAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (A, "frameOn", bFrame);
-    place (bFrame, 436, 21, 56, 22);
+    place (bFrame, 436, 17, 56, 22);
     bSet.setButtonText ("SET");
     bSet.onClick = [this] { settings.setVisible (! settings.isVisible()); settings.toFront (false); };
-    place (bSet, 498, 21, 56, 22);
+    place (bSet, 498, 17, 56, 22);
 
     // panel lateral (Frame Adjust)
     bUp.setButtonText ("+"); bDn.setButtonText ("-");
