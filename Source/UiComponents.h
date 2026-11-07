@@ -66,8 +66,11 @@ public:
     void drawButtonBackground (juce::Graphics& g, juce::Button& b, const juce::Colour&, bool hover, bool down) override
     {
         auto r = b.getLocalBounds().toFloat().reduced (0.5f);
-        g.setColour (down ? juce::Colour (0xff343a43) : hover ? juce::Colour (0xff2d323b) : kBtn);
+        juce::ColourGradient bg (down ? juce::Colour (0xff1c1f25) : hover ? juce::Colour (0xff3a404a) : juce::Colour (0xff343a44), r.getX(), r.getY(),
+                                 down ? juce::Colour (0xff15171c) : juce::Colour (0xff1f232a), r.getX(), r.getBottom(), false);
+        g.setGradientFill (bg);
         g.fillRoundedRectangle (r, 4.f);
+        g.setColour (juce::Colour (0x1affffff)); g.drawHorizontalLine ((int) r.getY() + 1, r.getX() + 3.f, r.getRight() - 3.f);
         g.setColour (b.getToggleState() ? kOrange : juce::Colour (0xff3a404a));
         g.drawRoundedRectangle (r, 4.f, 1.f);
     }
@@ -486,37 +489,51 @@ public:
     void paint (juce::Graphics& g) override
     {
         g.setColour (kDeep); g.fillRoundedRectangle (4.f, 2.f, (float) getWidth() - 8.f, (float) getHeight() - 4.f, 6.f);
+        if (vec) paintVec (g); else paintBars (g);
+        // el titulo se dibuja al final para que quede siempre encima
         g.setColour (kText); setF (g, 13.f, true);
         g.drawText (vec ? "VECTORSCOPE" : "PHASE CORRELATION", 0, 5, getWidth(), 18, juce::Justification::centred, false);
-        if (vec) { paintVec (g); return; }
-
-        const float x0 = 16.f, w = (float) getWidth() - 32.f;
-        auto track = [&] (float y) { const juce::Rectangle<float> r (x0, y, w, 14.f); g.setColour (juce::Colour (0xff16191e)); g.fillRoundedRectangle (r, 3.f); g.setColour (kLine); g.drawRoundedRectangle (r, 3.f, 1.f); g.setColour (juce::Colour (0xff3a424d)); g.drawVerticalLine ((int) r.getCentreX(), r.getY(), r.getBottom()); return r; };
-        {
-            auto r = track (41.f);
-            const float mx = x0 + (juce::jlimit (-1.f, 1.f, corrD) + 1.f) * 0.5f * w;
-            g.setColour (kOrange); g.fillRect (mx - 3.f, r.getY() - 3.f, 6.f, r.getHeight() + 6.f);
-            g.setColour (kMuted); setF (g, 11.f);
-            g.drawText ("-1", (int) x0, 59, 30, 14, juce::Justification::left, false);
-            g.drawText ("0", (int) (x0 + w * 0.5f) - 15, 59, 30, 14, juce::Justification::centred, false);
-            g.drawText ("+1", (int) (x0 + w) - 30, 59, 30, 14, juce::Justification::right, false);
-        }
-        {
-            auto r = track (85.f);
-            const float mx = x0 + (juce::jlimit (-1.f, 1.f, balD) + 1.f) * 0.5f * w;
-            g.setColour (juce::Colour (0xff2a9fd6)); g.fillRect (mx - 3.f, r.getY() - 3.f, 6.f, r.getHeight() + 6.f);
-            g.setColour (kMuted); setF (g, 11.f);
-            g.drawText ("L", (int) x0, 103, 30, 14, juce::Justification::left, false);
-            g.drawText ("C", (int) (x0 + w * 0.5f) - 15, 103, 30, 14, juce::Justification::centred, false);
-            g.drawText ("R", (int) (x0 + w) - 30, 103, 30, 14, juce::Justification::right, false);
-        }
     }
 
 private:
-    // geometria del vectorscopio en coordenadas del componente (ocupa todo el recuadro)
+    void paintBars (juce::Graphics& g)
+    {
+        const float W = (float) getWidth(), H = (float) getHeight();
+        const float x0 = 16.f, w = W - 32.f;
+        const float y1 = H * 0.5f - 29.f, y2 = y1 + 44.f;   // punto medio entre ambas barras = centro del recuadro
+        auto track = [&] (float y)
+        {
+            const juce::Rectangle<float> r (x0, y, w, 14.f);
+            g.setColour (juce::Colour (0xff16191e)); g.fillRoundedRectangle (r, 3.f);
+            g.setColour (kLine); g.drawRoundedRectangle (r, 3.f, 1.f);
+            g.setColour (juce::Colour (0xff3a424d)); g.drawVerticalLine ((int) r.getCentreX(), r.getY(), r.getBottom());
+            return r;
+        };
+        {
+            auto r = track (y1);
+            const float mx = x0 + (juce::jlimit (-1.f, 1.f, corrD) + 1.f) * 0.5f * w;
+            g.setColour (kOrange); g.fillRect (mx - 3.f, r.getY() - 3.f, 6.f, r.getHeight() + 6.f);
+            const float ly = y1 + 18.f;
+            g.setColour (kMuted); setF (g, 11.f);
+            g.drawText ("-1", (int) x0, (int) ly, 30, 14, juce::Justification::left, false);
+            g.drawText ("0", (int) (x0 + w * 0.5f) - 15, (int) ly, 30, 14, juce::Justification::centred, false);
+            g.drawText ("+1", (int) (x0 + w) - 30, (int) ly, 30, 14, juce::Justification::right, false);
+        }
+        {
+            auto r = track (y2);
+            const float mx = x0 + (juce::jlimit (-1.f, 1.f, balD) + 1.f) * 0.5f * w;
+            g.setColour (juce::Colour (0xff2a9fd6)); g.fillRect (mx - 3.f, r.getY() - 3.f, 6.f, r.getHeight() + 6.f);
+            const float ly = y2 + 18.f;
+            g.setColour (kMuted); setF (g, 11.f);
+            g.drawText ("L", (int) x0, (int) ly, 30, 14, juce::Justification::left, false);
+            g.drawText ("C", (int) (x0 + w * 0.5f) - 15, (int) ly, 30, 14, juce::Justification::centred, false);
+            g.drawText ("R", (int) (x0 + w) - 30, (int) ly, 30, 14, juce::Justification::right, false);
+        }
+    }
+
     float geoCx() const { return (float) getWidth() * 0.5f; }
     float geoCy() const { return (float) getHeight() - 16.f; }
-    float geoR() const { return juce::jmax (10.f, juce::jmin ((float) getWidth() * 0.5f - 26.f, (float) getHeight() - 36.f)); }
+    float geoR()  const { return juce::jmax (10.f, juce::jmin ((float) getWidth() * 0.5f - 26.f, (float) getHeight() - 36.f)); }
 
     void ensureTrail()
     {
@@ -535,14 +552,14 @@ private:
         const int mon = (int) pv (proc.apvts, "monitor");
         const float x0 = geoCx(), y0 = geoCy(), R = geoR();
         juce::Graphics g (trail);
-        g.setColour (kDeep.withAlpha (0.28f)); g.fillAll();      // persistencia del trazo
+        g.setColour (kDeep.withAlpha (0.28f)); g.fillAll();     // persistencia del trazo
         g.setColour (kOrange.withAlpha (0.6f));
         for (int i = 0; i < 512; ++i)
         {
             const int j = (w - 512 + i) & mask;
             const float l = RL[j], r = RR[j];
             float a = l, b = r;
-            if (mon == 1) { a = l; b = 0.f; }
+            if (mon == 1)      { a = l; b = 0.f; }
             else if (mon == 2) { a = 0.f; b = r; }
             else if (mon == 3) { a = b = 0.5f * (l + r); }
             else if (mon == 4) { a = 0.5f * (l - r); b = -a; }
@@ -580,10 +597,11 @@ private:
             const bool big = std::fmod (std::abs (a), 45.f) < 0.01f;
             g.setColour (juce::Colour (0xff6a7482)); g.drawLine (juce::Line<float> (pt (a, R), pt (a, R + (big ? 5.f : 3.f))), 1.f);
         }
-        g.setColour (juce::Colour (0xffb8c0cc)); setF (g, 11.f, true);
+        // L y R sobre las diagonales de +-45 grados, con separacion y un poco mas arriba
+        const auto pl = pt (-45.f, R + 12.f), pr = pt (45.f, R + 12.f);
         g.setColour (kText); setF (g, 12.f, true);
-        g.drawText ("L", (int) (cx0 - R - 24.f), (int) (cy0 - R * 0.35f) - 7, 16, 14, juce::Justification::centred, false);
-        g.drawText ("R", (int) (cx0 + R + 8.f), (int) (cy0 - R * 0.35f) - 7, 16, 14, juce::Justification::centred, false);
+        g.drawText ("L", (int) pl.x - 8, (int) pl.y - 12, 16, 14, juce::Justification::centred, false);
+        g.drawText ("R", (int) pr.x - 8, (int) pr.y - 12, 16, 14, juce::Justification::centred, false);
     }
 
     SpectrumProcessor& proc;
@@ -685,24 +703,56 @@ private:
     juce::TextButton close, defaults;
 };
 
-// ---------------------------------------------------------------- fondo y textos fijos
+// ---------------------------------------------------------------- fondo y textos fijos (acabado de hardware)
 class Content : public juce::Component
 {
 public:
     std::function<void()> onReset;
     bool frameOn = true;
-    void mouseDoubleClick (const juce::MouseEvent& e) override { if (onReset && juce::Rectangle<int> (566, 6, 188, 52).contains (e.getPosition())) onReset(); }
+
+    void mouseDoubleClick (const juce::MouseEvent& e) override
+    {
+        if (onReset && juce::Rectangle<int> (566, 6, 188, 44).contains (e.getPosition())) onReset();
+    }
+
     void paint (juce::Graphics& g) override
     {
-        g.fillAll (juce::Colour (0xff12141a));
-        auto box = [&] (int x, int y, int w, int h)
+        // cuerpo: degradado de grafito y textura de cepillado
         {
-            g.setColour (kPanel); g.fillRoundedRectangle ((float) x, (float) y, (float) w, (float) h, 6.f);
-            g.setColour (kLine); g.drawRoundedRectangle ((float) x + 0.5f, (float) y + 0.5f, (float) w - 1.f, (float) h - 1.f, 6.f, 1.f);
+            juce::ColourGradient bg (juce::Colour (0xff2a2e36), 0.f, 0.f, juce::Colour (0xff0b0d11), 0.f, 470.f, false);
+            g.setGradientFill (bg); g.fillAll();
+        }
+        g.setColour (juce::Colour (0x05ffffff));
+        for (int y = 0; y < 470; y += 3) g.drawHorizontalLine (y, 0.f, 760.f);
+
+        // paneles: sombra, degradado, bisel de luz arriba y borde oscuro
+        auto box = [&] (float x, float y, float w, float h)
+        {
+            const juce::Rectangle<float> r (x, y, w, h);
+            g.setColour (juce::Colour (0x77000000)); g.fillRoundedRectangle (r.translated (0.f, 2.f), 7.f);
+            juce::ColourGradient gr (juce::Colour (0xff262a31), r.getX(), r.getY(), juce::Colour (0xff15171c), r.getX(), r.getBottom(), false);
+            g.setGradientFill (gr); g.fillRoundedRectangle (r, 7.f);
+            g.setColour (juce::Colour (0x1cffffff)); g.drawRoundedRectangle (r.reduced (0.5f), 7.f, 1.f);
+            g.setColour (kLine); g.drawRoundedRectangle (r.reduced (1.f), 7.f, 1.f);
         };
-        box (6, 6, 554, 52); box (566, 6, 188, 52); box (6, 64, 418, 324); box (430, 64, 130, 324); box (6, 394, 554, 70); box (566, 64, 188, 400);
+        box (6.f, 6.f, 554.f, 44.f); box (566.f, 6.f, 188.f, 44.f);
+        box (6.f, 64.f, 418.f, 324.f); box (430.f, 64.f, 130.f, 324.f);
+        box (6.f, 394.f, 554.f, 70.f); box (566.f, 64.f, 188.f, 400.f);
+
+        // tornillos en las cuatro esquinas del panel frontal
+        auto screw = [&] (float cx, float cy)
+        {
+            g.setColour (juce::Colour (0x88000000)); g.fillEllipse (cx - 3.f, cy - 2.f, 7.f, 7.f);
+            juce::ColourGradient sg (juce::Colour (0xffc4c8d0), cx - 2.f, cy - 2.f, juce::Colour (0xff4a4e57), cx + 2.f, cy + 2.f, true);
+            g.setGradientFill (sg); g.fillEllipse (cx - 3.5f, cy - 3.5f, 7.f, 7.f);
+            g.setColour (juce::Colour (0xff2a2d33));
+            juce::Path slot; slot.startNewSubPath (cx - 2.5f, cy); slot.lineTo (cx + 2.5f, cy);
+            g.strokePath (slot, juce::PathStrokeType (1.1f), juce::AffineTransform::rotation (0.7f, cx, cy));
+        };
+        screw (3.5f, 3.5f); screw (756.5f, 3.5f); screw (3.5f, 466.5f); screw (756.5f, 466.5f);
+
         setF (g, 24.f, true); g.setColour (juce::Colour (0xffc9ccd2));
-        g.drawText ("METERS", 566, 6, 188, 52, juce::Justification::centred, false);
+        g.drawText ("METERS", 566, 6, 188, 44, juce::Justification::centred, false);
         const float a = frameOn ? 1.f : 0.35f;
         setF (g, 12.f);
         g.setColour (kText.withAlpha (a));
