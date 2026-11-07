@@ -17,10 +17,10 @@ SpectrumEditor::SpectrumEditor (SpectrumProcessor& p)
     bFrame.setButtonText ("FRAME");
     bFrame.setClickingTogglesState (true);
     frameAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (A, "frameOn", bFrame);
-    place (bFrame, 266, 19, 110, 26);
+    place (bFrame, 436, 21, 56, 22);
     bSet.setButtonText ("SET");
     bSet.onClick = [this] { settings.setVisible (! settings.isVisible()); settings.toFront (false); };
-    place (bSet, 384, 19, 110, 26);
+    place (bSet, 498, 21, 56, 22);
 
     // panel lateral (Frame Adjust)
     bUp.setButtonText ("+"); bDn.setButtonText ("-");
@@ -48,7 +48,7 @@ SpectrumEditor::SpectrumEditor (SpectrumProcessor& p)
     spectrum.onPick = [this] (int m) { pickMidi (m); };
     place (meters, 566, 64, 188, 236);
     place (phase, 566, 304, 188, 158);
-    place (keyboard, 12, 404, 542, 56);
+    place (keyboard, 12, 398, 542, 62);
     keyboard.onPick = [this] (int m) { pickMidi (m); };
     place (settings, 6, 64, 554, 324);
     settings.setVisible (false);
