@@ -493,22 +493,22 @@ public:
         const float x0 = 16.f, w = (float) getWidth() - 32.f;
         auto track = [&] (float y) { const juce::Rectangle<float> r (x0, y, w, 14.f); g.setColour (juce::Colour (0xff16191e)); g.fillRoundedRectangle (r, 3.f); g.setColour (kLine); g.drawRoundedRectangle (r, 3.f, 1.f); g.setColour (juce::Colour (0xff3a424d)); g.drawVerticalLine ((int) r.getCentreX(), r.getY(), r.getBottom()); return r; };
         {
-            auto r = track (32.f);
+            auto r = track (41.f);
             const float mx = x0 + (juce::jlimit (-1.f, 1.f, corrD) + 1.f) * 0.5f * w;
             g.setColour (kOrange); g.fillRect (mx - 3.f, r.getY() - 3.f, 6.f, r.getHeight() + 6.f);
             g.setColour (kMuted); setF (g, 11.f);
-            g.drawText ("-1", (int) x0, 50, 30, 14, juce::Justification::left, false);
-            g.drawText ("0", (int) (x0 + w * 0.5f) - 15, 50, 30, 14, juce::Justification::centred, false);
-            g.drawText ("+1", (int) (x0 + w) - 30, 50, 30, 14, juce::Justification::right, false);
+            g.drawText ("-1", (int) x0, 59, 30, 14, juce::Justification::left, false);
+            g.drawText ("0", (int) (x0 + w * 0.5f) - 15, 59, 30, 14, juce::Justification::centred, false);
+            g.drawText ("+1", (int) (x0 + w) - 30, 59, 30, 14, juce::Justification::right, false);
         }
         {
-            auto r = track (76.f);
+            auto r = track (85.f);
             const float mx = x0 + (juce::jlimit (-1.f, 1.f, balD) + 1.f) * 0.5f * w;
             g.setColour (juce::Colour (0xff2a9fd6)); g.fillRect (mx - 3.f, r.getY() - 3.f, 6.f, r.getHeight() + 6.f);
             g.setColour (kMuted); setF (g, 11.f);
-            g.drawText ("L", (int) x0, 94, 30, 14, juce::Justification::left, false);
-            g.drawText ("C", (int) (x0 + w * 0.5f) - 15, 94, 30, 14, juce::Justification::centred, false);
-            g.drawText ("R", (int) (x0 + w) - 30, 94, 30, 14, juce::Justification::right, false);
+            g.drawText ("L", (int) x0, 103, 30, 14, juce::Justification::left, false);
+            g.drawText ("C", (int) (x0 + w * 0.5f) - 15, 103, 30, 14, juce::Justification::centred, false);
+            g.drawText ("R", (int) (x0 + w) - 30, 103, 30, 14, juce::Justification::right, false);
         }
     }
 
@@ -516,7 +516,7 @@ private:
     // geometria del vectorscopio en coordenadas del componente (ocupa todo el recuadro)
     float geoCx() const { return (float) getWidth() * 0.5f; }
     float geoCy() const { return (float) getHeight() - 16.f; }
-    float geoR() const { return juce::jmax (10.f, juce::jmin ((float) getWidth() * 0.5f - 14.f, (float) getHeight() - 36.f)); }
+    float geoR() const { return juce::jmax (10.f, juce::jmin ((float) getWidth() * 0.5f - 26.f, (float) getHeight() - 36.f)); }
 
     void ensureTrail()
     {
@@ -532,6 +532,7 @@ private:
     {
         const float* RL = proc.ringLeft(); const float* RR = proc.ringRight();
         const int w = proc.getWritePos(), mask = SpectrumProcessor::ringSize - 1;
+        const int mon = (int) pv (proc.apvts, "monitor");
         const float x0 = geoCx(), y0 = geoCy(), R = geoR();
         juce::Graphics g (trail);
         g.setColour (kDeep.withAlpha (0.28f)); g.fillAll();      // persistencia del trazo
@@ -540,7 +541,12 @@ private:
         {
             const int j = (w - 512 + i) & mask;
             const float l = RL[j], r = RR[j];
-            float X = (r - l) * 0.5f, Y = (l + r) * 0.5f;
+            float a = l, b = r;
+            if (mon == 1) { a = l; b = 0.f; }
+            else if (mon == 2) { a = 0.f; b = r; }
+            else if (mon == 3) { a = b = 0.5f * (l + r); }
+            else if (mon == 4) { a = 0.5f * (l - r); b = -a; }
+            float X = (b - a) * 0.5f, Y = (a + b) * 0.5f;
             if (Y < 0.f) { X = -X; Y = -Y; }
             const float rad = std::hypot (X, Y);
             if (rad < 1e-4f) continue;
@@ -553,7 +559,12 @@ private:
     {
         const float pi = juce::MathConstants<float>::pi, cx0 = geoCx(), cy0 = geoCy(), R = geoR();
         ensureTrail();
-        g.drawImageAt (trail, 0, 0);
+        {
+            juce::Graphics::ScopedSaveState ss (g);
+            juce::Path clip; clip.addRoundedRectangle (4.f, 2.f, (float) getWidth() - 8.f, (float) getHeight() - 4.f, 6.f);
+            g.reduceClipRegion (clip);
+            g.drawImageAt (trail, 0, 0);
+        }
         auto pt = [&] (float deg, float r) { const float a = juce::degreesToRadians (deg); return juce::Point<float> (cx0 + r * std::sin (a), cy0 - r * std::cos (a)); };
         for (float a : { -67.5f, -22.5f, 22.5f, 67.5f }) { g.setColour (juce::Colour (0xff1f252c)); g.drawLine (juce::Line<float> (juce::Point<float> (cx0, cy0), pt (a, R)), 1.f); }
         for (float a : { -90.f, -45.f, 0.f, 45.f, 90.f }) { g.setColour (juce::Colour (0xff3a424d)); g.drawLine (juce::Line<float> (juce::Point<float> (cx0, cy0), pt (a, R)), 1.f); }
@@ -570,7 +581,9 @@ private:
             g.setColour (juce::Colour (0xff6a7482)); g.drawLine (juce::Line<float> (pt (a, R), pt (a, R + (big ? 5.f : 3.f))), 1.f);
         }
         g.setColour (juce::Colour (0xffb8c0cc)); setF (g, 11.f, true);
-        g.drawText ("MONO", (int) pt (0.f, R + 9.f).x - 20, (int) pt (0.f, R + 9.f).y - 6, 40, 12, juce::Justification::centred, false);
+        g.setColour (kText); setF (g, 12.f, true);
+        g.drawText ("L", (int) (cx0 - R - 24.f), (int) (cy0 - R * 0.35f) - 7, 16, 14, juce::Justification::centred, false);
+        g.drawText ("R", (int) (cx0 + R + 8.f), (int) (cy0 - R * 0.35f) - 7, 16, 14, juce::Justification::centred, false);
     }
 
     SpectrumProcessor& proc;
