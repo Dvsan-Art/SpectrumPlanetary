@@ -68,7 +68,8 @@ public:
             if (p.channel == 2)      { sample (0, L[i]); sample (1, R[i]); }
             else if (p.channel == 0) { sample (0, L[i]); }
             else if (p.channel == 1) { sample (0, R[i]); }
-            else                     { sample (0, 0.5f * (L[i] + R[i])); }   // Mix
+            else if (p.channel == 3) { sample (0, 0.5f * (L[i] + R[i])); }   // Mix
+            else                     { sample (0, 0.5f * (L[i] - R[i])); }   // Side (Diff)
         }
         frameSamples += (p.channel == 2 ? 2 : 1) * n;
         pollCounter  += n;
