@@ -291,7 +291,8 @@ void SpectrumProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
         static const int bandList[3] = { 3, 4, 6 };
         FilterBankAnalyzer::Params q;
         q.bands     = bandList[juce::jlimit (0, 2, (int) bandsParam->load())];
-        q.channel   = (int) chanParam->load();
+        const int monNow = (int) monParam->load();
+        q.channel   = monNow == 0 ? (int) chanParam->load() : (monNow == 1 ? 0 : monNow == 2 ? 1 : monNow == 3 ? 3 : 4);
         q.peakOn    = peakOnParam->load() > 0.5f;
         q.peakDecay = peakDecayParam->load();
         q.holdOn    = holdOnParam->load() > 0.5f;
